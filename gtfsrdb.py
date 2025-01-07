@@ -27,14 +27,19 @@ import time
 import sys
 from optparse import OptionParser
 import logging
-try:
-    from urllib2 import urlopen
-except ImportError:
-    from urllib.request import urlopen
+#try:
+#    from urllib2 import urlopen
+#except ImportError:
+#    from urllib.request import urlopen
+from urllib.request import urlopen, Request
+import ssl
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2
 from model import *
+
+#context = ssl.SSLContext(ssl.PROTOCOL_TLSv1.2)
+context = ssl.SSLContext()
 
 p = OptionParser()
 
@@ -165,8 +170,9 @@ try:
             if opts.tripUpdates:
                 fm = gtfs_realtime_pb2.FeedMessage()
                 fm.ParseFromString(
-                    urlopen(opts.tripUpdates).read()
+                    urlopen(opts.tripUpdates, context=context).read()
                 )
+                logging.debug(fm)
 
                 # Convert this a Python object, and save it to be placed into each
                 # trip_update
@@ -176,7 +182,7 @@ try:
                 if fm.header.gtfs_realtime_version != u'1.0':
                     logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
-                logging.info('Adding %s trip updates', len(fm.entity))
+                logging.info('%s: Adding %s trip updates', timestamp, len(fm.entity))
                 for entity in fm.entity:
 
                     tu = entity.trip_update
@@ -219,10 +225,16 @@ try:
                     session.add(dbtu)
 
             if opts.alerts:
+		hdr = {}
+                req = Request(opts.alerts, headers=hdr)
+                #req = Request(opts.alerts + 'api_key=' + apikey + '&subscription-key=' + apikey)
+                #req.add_header('apikey', '5d4768b18632438393a9cff341b0cbc5')
+                #req.get_method = lambda: 'GET'
                 fm = gtfs_realtime_pb2.FeedMessage()
                 fm.ParseFromString(
-                    urlopen(opts.alerts).read()
+                    urlopen(req, context=context).read()
                 )
+                logging.debug(fm)
 
                 # Convert this a Python object, and save it to be placed into each
                 # trip_update
@@ -232,7 +244,7 @@ try:
                 if fm.header.gtfs_realtime_version != u'1.0':
                     logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
-                    logging.info('Adding %s alerts', len(fm.entity))
+                    logging.info('%s: Adding %s alerts', timestamp, len(fm.entity))
                     for entity in fm.entity:
                         alert = entity.alert
                         dbalert = Alert(
@@ -263,8 +275,9 @@ try:
             if opts.vehiclePositions:
                 fm = gtfs_realtime_pb2.FeedMessage()
                 fm.ParseFromString(
-                    urlopen(opts.vehiclePositions).read()
+                    urlopen(opts.vehiclePositions, context=context).read()
                 )
+                logging.debug(fm)
 
                 # Convert this a Python object, and save it to be placed into each
                 # vehicle_position
@@ -274,7 +287,7 @@ try:
                 if fm.header.gtfs_realtime_version != u'1.0':
                     logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
-                logging.info('Adding %s vehicle_positions', len(fm.entity))
+                logging.info('%s: Adding %s vehicle_positions', timestamp, len(fm.entity))
                 for entity in fm.entity:
 
                     vp = entity.vehicle
