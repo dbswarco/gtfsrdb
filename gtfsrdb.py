@@ -27,10 +27,6 @@ import time
 import sys
 from optparse import OptionParser
 import logging
-#try:
-#    from urllib2 import urlopen
-#except ImportError:
-#    from urllib.request import urlopen
 from urllib.request import urlopen, Request
 import ssl
 from sqlalchemy import create_engine, inspect
@@ -79,6 +75,10 @@ p.add_option('-q', '--quiet', default=False, dest='quiet',
 
 p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
              help='When multiple translations are available, prefer this language')
+
+p.add_option('--header', default=None,
+             help="Add HTML header options such as API key; must be formatted as \
+                  a dict {}.", metavar="HEADER")
 
 opts, args = p.parse_args()
 
@@ -169,8 +169,9 @@ try:
 
             if opts.tripUpdates:
                 fm = gtfs_realtime_pb2.FeedMessage()
+                req = Request(opts.tripUpdates, opts.header)
                 fm.ParseFromString(
-                    urlopen(opts.tripUpdates, context=context).read()
+                    urlopen(req, context=context).read()
                 )
                 logging.debug(fm)
 
@@ -226,6 +227,7 @@ try:
 
             if opts.alerts:
                 fm = gtfs_realtime_pb2.FeedMessage()
+                req = Request(opts.alerts, opts.header)
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
@@ -269,8 +271,9 @@ try:
                             dbalert.InformedEntities.append(dbie)
             if opts.vehiclePositions:
                 fm = gtfs_realtime_pb2.FeedMessage()
+                req = Request(opts.vehiclePositions, opts.header)
                 fm.ParseFromString(
-                    urlopen(opts.vehiclePositions, context=context).read()
+                    urlopen(req, context=context).read()
                 )
                 logging.debug(fm)
 
