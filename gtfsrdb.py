@@ -225,11 +225,6 @@ try:
                     session.add(dbtu)
 
             if opts.alerts:
-		hdr = {}
-                req = Request(opts.alerts, headers=hdr)
-                #req = Request(opts.alerts + 'api_key=' + apikey + '&subscription-key=' + apikey)
-                #req.add_header('apikey', '5d4768b18632438393a9cff341b0cbc5')
-                #req.get_method = lambda: 'GET'
                 fm = gtfs_realtime_pb2.FeedMessage()
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
