@@ -33,6 +33,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2
 from model import *
+import json
 
 #context = ssl.SSLContext(ssl.PROTOCOL_TLSv1.2)
 context = ssl.SSLContext()
@@ -78,7 +79,7 @@ p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
 
 p.add_option('-H', '--header', default=None,
              help="Add HTML header options such as API key; must be formatted as \
-                  key: value.", metavar="HEADER")
+                  JSON {key: value}.", metavar="HEADER")
 
 opts, args = p.parse_args()
 
@@ -116,7 +117,8 @@ if opts.vehiclePositions is None:
 
 if opts.header is not None:
     print(opts.header)
-    opts.header = dict(item.split("=") for item in opts.header.split(","))
+    #opts.header = dict(item.split("=") for item in opts.header.split(","))
+    opts.header = json.loads(opts.header)
 
 # Connect to the database
 engine = create_engine(opts.dsn, echo=opts.verbose)
