@@ -78,7 +78,7 @@ p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
 
 p.add_option('-H', '--header', default=None,
              help="Add HTML header options such as API key; must be formatted as \
-                  a dict {}.", metavar="HEADER")
+                  key: value.", metavar="HEADER")
 
 opts, args = p.parse_args()
 
@@ -113,6 +113,9 @@ if opts.tripUpdates is None:
 
 if opts.vehiclePositions is None:
     logging.warning('Warning: no vehicle positions URL specified, proceeding without vehicle positions')
+
+if opts.header is not None:
+    opts.header = dict(opts.header)
 
 # Connect to the database
 engine = create_engine(opts.dsn, echo=opts.verbose)
@@ -169,7 +172,7 @@ try:
 
             if opts.tripUpdates:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.tripUpdates, dict(opts.header))
+                req = Request(opts.tripUpdates, opts.header)
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
@@ -227,7 +230,7 @@ try:
 
             if opts.alerts:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.alerts, dict(opts.header))
+                req = Request(opts.alerts, opts.header)
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
@@ -271,7 +274,7 @@ try:
                             dbalert.InformedEntities.append(dbie)
             if opts.vehiclePositions:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.vehiclePositions, dict(opts.header))
+                req = Request(opts.vehiclePositions, opts.header)
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
