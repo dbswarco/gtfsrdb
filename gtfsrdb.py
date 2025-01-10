@@ -76,7 +76,7 @@ p.add_option('-q', '--quiet', default=False, dest='quiet',
 p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
              help='When multiple translations are available, prefer this language')
 
-p.add_option('--header', default=None,
+p.add_option('-H', '--header', default=None,
              help="Add HTML header options such as API key; must be formatted as \
                   a dict {}.", metavar="HEADER")
 
