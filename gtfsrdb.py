@@ -115,6 +115,7 @@ if opts.vehiclePositions is None:
     logging.warning('Warning: no vehicle positions URL specified, proceeding without vehicle positions')
 
 if opts.header is not None:
+    print(opts.header)
     opts.header = dict(item.split("=") for item in opts.header.split(","))
 
 # Connect to the database
