@@ -117,7 +117,7 @@ if opts.vehiclePositions is None:
 
 if opts.header is not None:
     print(opts.header)
-    opts.header = dict(item.split("=") for item in opts.header.split(","))
+    opts.header = bytes(dict(item.split("=") for item in opts.header.split(",")), encoding="utf-8")
     #opts.header = json.loads(opts.header)
 
 # Connect to the database
