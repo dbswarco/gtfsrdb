@@ -117,8 +117,8 @@ if opts.vehiclePositions is None:
 
 if opts.header is not None:
     print(opts.header)
-    #opts.header = dict(item.split("=") for item in opts.header.split(","))
-    opts.header = json.loads(opts.header)
+    opts.header = dict(item.split("=") for item in opts.header.split(","))
+    #opts.header = json.loads(opts.header)
 
 # Connect to the database
 engine = create_engine(opts.dsn, echo=opts.verbose)
