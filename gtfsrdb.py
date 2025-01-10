@@ -169,7 +169,7 @@ try:
 
             if opts.tripUpdates:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.tripUpdates, opts.header)
+                req = Request(opts.tripUpdates, dict(opts.header))
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
@@ -227,7 +227,7 @@ try:
 
             if opts.alerts:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.alerts, opts.header)
+                req = Request(opts.alerts, dict(opts.header))
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
@@ -271,7 +271,7 @@ try:
                             dbalert.InformedEntities.append(dbie)
             if opts.vehiclePositions:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.vehiclePositions, opts.header)
+                req = Request(opts.vehiclePositions, dict(opts.header))
                 fm.ParseFromString(
                     urlopen(req, context=context).read()
                 )
