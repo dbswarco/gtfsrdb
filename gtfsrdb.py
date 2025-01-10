@@ -117,7 +117,7 @@ if opts.vehiclePositions is None:
 
 if opts.header is not None:
     print(opts.header)
-    opts.header = dict(item.split("=") for item in str(opts.header).split(",").lstrip())
+    opts.header = dict(item.split("=") for item in str(opts.header).lstrip().split(","))
     print(opts.header)
     #opts.header = json.loads(opts.header)
 
