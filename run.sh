@@ -5,6 +5,6 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-psql -d ott -h 127.0.0.1 -U ott -c "create database $1;"
-./gtfsrdb.py -d postgresql+psycopg2://ott:ott@10.1.110.195/"$1" -c "$2" "$3" "$4"
+psql -d ott -h 10.5.0.2 -U ott -c "create database $1;"
+./gtfsrdb.py -d postgresql+psycopg2://ott:ott@10.5.0.2/"$1" -c "$2" "$3" "$4"
 
