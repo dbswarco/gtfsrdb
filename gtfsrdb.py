@@ -80,6 +80,9 @@ p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
 p.add_option('-H', '--header', default=None,
              help="Add HTML header options such as API key; must be formatted as JSON string.", metavar="HEADER")
 
+p.add_option('-f', '--frequency', default=10,
+             help='How often to poll for new data.')
+
 opts, args = p.parse_args()
 
 if opts.quiet:
