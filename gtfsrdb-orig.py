@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 # gtfsrdb.py: load gtfs-realtime data to a database
 # recommended to have the (static) GTFS data for the agency you are connecting
 # to already loaded.
@@ -25,12 +27,14 @@ import time
 import sys
 from optparse import OptionParser
 import logging
-from urllib.request import urlopen, Request
+try:
+    from urllib2 import urlopen
+except ImportError:
+    from urllib.request import urlopen
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2
 from model import *
-import json
 
 p = OptionParser()
 
@@ -71,9 +75,6 @@ p.add_option('-q', '--quiet', default=False, dest='quiet',
 p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
              help='When multiple translations are available, prefer this language')
 
-p.add_option('-H', '--header', default=None,
-             help="Add HTML header options such as API key; must be formatted as JSON string.", metavar="HEADER")
-
 opts, args = p.parse_args()
 
 if opts.quiet:
@@ -107,10 +108,6 @@ if opts.tripUpdates is None:
 
 if opts.vehiclePositions is None:
     logging.warning('Warning: no vehicle positions URL specified, proceeding without vehicle positions')
-
-headers = {}
-if opts.header is not None:
-    headers = json.loads(opts.header)
 
 # Connect to the database
 engine = create_engine(opts.dsn, echo=opts.verbose)
@@ -167,11 +164,9 @@ try:
 
             if opts.tripUpdates:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.tripUpdates, headers=headers)
                 fm.ParseFromString(
-                    urlopen(req).read()
+                    urlopen(opts.tripUpdates).read()
                 )
-                logging.debug(fm)
 
                 # Convert this a Python object, and save it to be placed into each
                 # trip_update
@@ -181,7 +176,7 @@ try:
                 if fm.header.gtfs_realtime_version != u'1.0':
                     logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
-                logging.info('%s: Adding %s trip updates', timestamp, len(fm.entity))
+                logging.info('Adding %s trip updates', len(fm.entity))
                 for entity in fm.entity:
 
                     tu = entity.trip_update
@@ -225,11 +220,9 @@ try:
 
             if opts.alerts:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.alerts, headers=headers)
                 fm.ParseFromString(
-                    urlopen(req).read()
+                    urlopen(opts.alerts).read()
                 )
-                logging.debug(fm)
 
                 # Convert this a Python object, and save it to be placed into each
                 # trip_update
@@ -239,7 +232,7 @@ try:
                 if fm.header.gtfs_realtime_version != u'1.0':
                     logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
-                    logging.info('%s: Adding %s alerts', timestamp, len(fm.entity))
+                    logging.info('Adding %s alerts', len(fm.entity))
                     for entity in fm.entity:
                         alert = entity.alert
                         dbalert = Alert(
@@ -269,11 +262,9 @@ try:
                             dbalert.InformedEntities.append(dbie)
             if opts.vehiclePositions:
                 fm = gtfs_realtime_pb2.FeedMessage()
-                req = Request(opts.vehiclePositions, headers=headers)
                 fm.ParseFromString(
-                    urlopen(req).read()
+                    urlopen(opts.vehiclePositions).read()
                 )
-                logging.debug(fm)
 
                 # Convert this a Python object, and save it to be placed into each
                 # vehicle_position
@@ -283,7 +274,7 @@ try:
                 if fm.header.gtfs_realtime_version != u'1.0':
                     logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
-                logging.info('%s: Adding %s vehicle_positions', timestamp, len(fm.entity))
+                logging.info('Adding %s vehicle_positions', len(fm.entity))
                 for entity in fm.entity:
 
                     vp = entity.vehicle
