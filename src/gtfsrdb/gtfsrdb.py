@@ -28,7 +28,7 @@ import logging
 from urllib.request import urlopen, Request
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
-import gtfs_realtime_pb2
+import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
 import json
 
@@ -56,7 +56,7 @@ p.add_option('-c', '--create-tables', default=False, dest='create',
 p.add_option('-1', '--once', default=False, dest='once', action='store_true',
              help='Only issue a request once')
 
-p.add_option('-w', '--wait', default=30, type='int', metavar='SECS',
+p.add_option('-w', '--wait', default=10, type='int', metavar='SECS',
              dest='timeout', help='Time to wait between requests (in seconds)')
 
 p.add_option('-k', '--kill-after', default=0, dest='killAfter', type="float",
@@ -73,9 +73,6 @@ p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
 
 p.add_option('-H', '--header', default=None,
              help="Add HTML header options such as API key; must be formatted as JSON string.", metavar="HEADER")
-
-p.add_option('-f', '--frequency', default=10,
-             help='How often to poll for new data.')
 
 opts, args = p.parse_args()
 
