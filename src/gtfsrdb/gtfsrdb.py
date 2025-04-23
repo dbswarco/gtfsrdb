@@ -29,11 +29,10 @@ from urllib.request import urlopen, Request
 import ssl
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
-import gtfs_realtime_pb2
-from model import *
+import gtfsrdb.gtfs_realtime_pb2 as gtfs_realtime_pb2
+from gtfsrdb.model import *
 import json
 
-#context = ssl.SSLContext(ssl.PROTOCOL_TLSv1.2)
 context = ssl.SSLContext()
 
 p = OptionParser()
@@ -52,7 +51,7 @@ p.add_option('-d', '--database', default=None, dest='dsn',
 
 p.add_option('-o', '--discard-old', default=False, dest='deleteOld',
              action='store_true',
-             help='Dicard old updates, so the database is always current')
+             help='Discard old updates, so the database is always current')
 
 p.add_option('-c', '--create-tables', default=False, dest='create',
              action='store_true', help="Create tables if they aren't found")
