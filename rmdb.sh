@@ -5,4 +5,4 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-psql -d ott -h 127.0.0.1 -U ott -c "drop database $1;"
+psql -d ott -h 10.5.0.2 -U ott -c "drop database $1;"
