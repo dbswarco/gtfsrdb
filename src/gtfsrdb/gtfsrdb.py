@@ -31,8 +31,8 @@ except ImportError:
     from urllib.request import urlopen
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
-import gtfsrdb.gtfs_realtime_pb2 as gtfs_realtime_pb2
-from gtfsrdb.model import *
+import gtfs_realtime_pb2 as gtfs_realtime_pb2
+from model import *
 
 def main():
     p = OptionParser()
@@ -154,6 +154,7 @@ def main():
                     sys.exit()
             try:
                 # if True:
+                print("Collecting GTFS-RT feed data at ", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 if opts.deleteOld:
                     # Go through all of the tables that we create, clear them
                     # Don't mess with other tables (i.e., tables from static GTFS)
