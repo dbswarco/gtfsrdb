@@ -40,7 +40,7 @@ def time_it(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        logging.debug(f"{func.__name__} took {end - start:.4f} seconds")
+        logging.debug(f"Function '{func.__name__}' took {end - start:.4f} seconds")
         return result
     return wrapper
 
@@ -122,6 +122,16 @@ def setup_logger(opts):
 
     if opts.vehiclePositions is None:
         logging.warning('No vehicle positions URL specified')
+
+
+@time_it
+def delete_old(session):
+    # Go through all of the tables that we create, clear them
+    # Don't mess with other tables (i.e., tables from static GTFS)
+    for theClass in AllClasses:
+        for obj in session.query(theClass):
+            session.delete(obj)
+    pass
 
 
 @time_it
@@ -272,6 +282,14 @@ def process_vehicle_positions(fm, opts, session):
     pass
 
 
+# This does deletes and adds, since it's atomic it never leaves us
+# without data
+@time_it
+def commit(ses):
+    ses.commit()
+    pass
+
+
 def main():
     # Parse command line options/args
     opts,args = parse_options()
@@ -314,14 +332,11 @@ def main():
                     sys.exit()
             try:
                 # if True:
-                logging.info("Collecting GTFS-RT feed data at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                logging.info(f"Collecting GTFS-RT feed data at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 if opts.deleteOld:
-                    # Go through all of the tables that we create, clear them
-                    # Don't mess with other tables (i.e., tables from static GTFS)
-                    for theClass in AllClasses:
-                        for obj in session.query(theClass):
-                            session.delete(obj)
+                    delete_old(session)
 
+                # Retrieve the feed message to supply to each of the feed processing functions
                 fm = gtfs_realtime_pb2.FeedMessage()
 
                 if opts.tripUpdates:
@@ -333,12 +348,6 @@ def main():
                 if opts.vehiclePositions:
                     process_vehicle_positions(fm, opts, session)
 
-                # This does deletes and adds, since it's atomic it never leaves us
-                # without data
-                @time_it
-                def commit(ses):
-                    ses.commit()
-                    pass
                 commit(session)
             except:
                 # else:
