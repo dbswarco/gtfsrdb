@@ -79,7 +79,7 @@ def parse_options():
     p.add_option('-v', '--verbose', default=False, dest='verbose',
                  action='store_true', help='Print process run times')
 
-    p.add_option('-vv', '--very-verbose', default=False, dest='veryverbose',
+    p.add_option('--very-verbose', default=False, dest='veryverbose',
                  action='store_true', help='Print process run times and generated SQL')
 
     p.add_option('-q', '--quiet', default=False, dest='quiet',
