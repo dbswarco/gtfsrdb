@@ -34,6 +34,159 @@ from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
 
+
+def getTrans(string, lang):
+    '''Get a specific translation from a TranslatedString.'''
+    # If we don't find the requested language, return this
+    untranslated = None
+
+    # single translation, return it
+    if len(string.translation) == 1:
+        return string.translation[0].text
+
+    for t in string.translation:
+        if t.language == lang:
+            return t.text
+        if t.language is None:
+            untranslated = t.text
+    return untranslated
+
+
+def process_trip_updates(fm, opts, session):
+    fm.ParseFromString(
+        urlopen(opts.tripUpdates).read()
+    )
+
+    # Convert this a Python object, and save it to be placed into each
+    # trip_update
+    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
+
+    # Check the feed version
+    if fm.header.gtfs_realtime_version != u'1.0':
+        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
+
+    logging.info('Adding %s trip updates', len(fm.entity))
+    for entity in fm.entity:
+
+        tu = entity.trip_update
+
+        dbtu = TripUpdate(
+            trip_id=tu.trip.trip_id,
+            route_id=tu.trip.route_id,
+            trip_start_time=tu.trip.start_time,
+            trip_start_date=tu.trip.start_date,
+
+            # get the schedule relationship
+            # This is somewhat undocumented, but by referencing the
+            # DESCRIPTOR.enum_types_by_name, you get a dict of enum types
+            # as described at
+            # http://code.google.com/apis/protocolbuffers/docs/reference/python/google.protobuf.descriptor.EnumDescriptor-class.html
+            schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
+                'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name,
+
+            vehicle_id=tu.vehicle.id,
+            vehicle_label=tu.vehicle.label,
+            vehicle_license_plate=tu.vehicle.license_plate,
+            timestamp=timestamp)
+
+        for stu in tu.stop_time_update:
+            dbstu = StopTimeUpdate(
+                stop_sequence=stu.stop_sequence,
+                stop_id=stu.stop_id,
+                arrival_delay=stu.arrival.delay,
+                arrival_time=stu.arrival.time,
+                arrival_uncertainty=stu.arrival.uncertainty,
+                departure_delay=stu.departure.delay,
+                departure_time=stu.departure.time,
+                departure_uncertainty=stu.departure.uncertainty,
+                schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
+                    'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name
+            )
+            session.add(dbstu)
+            dbtu.StopTimeUpdates.append(dbstu)
+
+        session.add(dbtu)
+
+
+def process_alerts(fm, opts, session):
+    fm.ParseFromString(
+        urlopen(opts.alerts).read()
+    )
+
+    # Convert this a Python object, and save it to be placed into each
+    # trip_update
+    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
+
+    # Check the feed version
+    if fm.header.gtfs_realtime_version != u'1.0':
+        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
+
+        logging.info('Adding %s alerts', len(fm.entity))
+        for entity in fm.entity:
+            alert = entity.alert
+            dbalert = Alert(
+                start=alert.active_period[0].start,
+                end=alert.active_period[0].end,
+                cause=alert.DESCRIPTOR.enum_types_by_name['Cause'].values_by_number[alert.cause].name,
+                effect=alert.DESCRIPTOR.enum_types_by_name['Effect'].values_by_number[alert.effect].name,
+                url=getTrans(alert.url, opts.lang),
+                header_text=getTrans(alert.header_text, opts.lang),
+                description_text=getTrans(alert.description_text,
+                                          opts.lang)
+            )
+
+            session.add(dbalert)
+            for ie in alert.informed_entity:
+                dbie = EntitySelector(
+                    agency_id=ie.agency_id,
+                    route_id=ie.route_id,
+                    route_type=ie.route_type,
+                    stop_id=ie.stop_id,
+
+                    trip_id=ie.trip.trip_id,
+                    trip_route_id=ie.trip.route_id,
+                    trip_start_time=ie.trip.start_time,
+                    trip_start_date=ie.trip.start_date)
+                session.add(dbie)
+                dbalert.InformedEntities.append(dbie)
+
+
+def process_vehicle_positions(fm, opts, session):
+    fm.ParseFromString(
+        urlopen(opts.vehiclePositions).read()
+    )
+
+    # Convert this a Python object, and save it to be placed into each
+    # vehicle_position
+    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
+
+    # Check the feed version
+    if fm.header.gtfs_realtime_version != u'1.0':
+        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
+
+    logging.info('Adding %s vehicle_positions', len(fm.entity))
+    for entity in fm.entity:
+        vp = entity.vehicle
+
+        dbvp = VehiclePosition(
+            trip_id=vp.trip.trip_id,
+            route_id=vp.trip.route_id,
+            trip_start_time=vp.trip.start_time,
+            trip_start_date=vp.trip.start_date,
+            vehicle_id=vp.vehicle.id,
+            vehicle_label=vp.vehicle.label,
+            vehicle_license_plate=vp.vehicle.license_plate,
+            position_latitude=vp.position.latitude,
+            position_longitude=vp.position.longitude,
+            position_bearing=vp.position.bearing,
+            position_speed=vp.position.speed,
+            occupancy_status=gtfs_realtime_pb2.VehicleDescriptor.OccupancyStatus.DESCRIPTOR.values_by_number[
+                vp.occupancy_status].name,
+            timestamp=timestamp)
+
+        session.add(dbvp)
+
+
 def main():
     p = OptionParser()
 
@@ -127,22 +280,6 @@ def main():
                 logging.error('Missing table %s! Use -c to create it.', table)
                 exit(1)
 
-    def getTrans(string, lang):
-        '''Get a specific translation from a TranslatedString.'''
-        # If we don't find the requested language, return this
-        untranslated = None
-
-        # single translation, return it
-        if len(string.translation) == 1:
-            return string.translation[0].text
-
-        for t in string.translation:
-            if t.language == lang:
-                return t.text
-            if t.language is None:
-                untranslated = t.text
-        return untranslated
-
     if opts.killAfter > 0:
         stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
 
@@ -164,138 +301,15 @@ def main():
 
                 if opts.tripUpdates:
                     fm = gtfs_realtime_pb2.FeedMessage()
-                    fm.ParseFromString(
-                        urlopen(opts.tripUpdates).read()
-                    )
-
-                    # Convert this a Python object, and save it to be placed into each
-                    # trip_update
-                    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
-                    # Check the feed version
-                    if fm.header.gtfs_realtime_version != u'1.0':
-                        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
-
-                    logging.info('Adding %s trip updates', len(fm.entity))
-                    for entity in fm.entity:
-
-                        tu = entity.trip_update
-
-                        dbtu = TripUpdate(
-                            trip_id=tu.trip.trip_id,
-                            route_id=tu.trip.route_id,
-                            trip_start_time=tu.trip.start_time,
-                            trip_start_date=tu.trip.start_date,
-
-                            # get the schedule relationship
-                            # This is somewhat undocumented, but by referencing the
-                            # DESCRIPTOR.enum_types_by_name, you get a dict of enum types
-                            # as described at
-                            # http://code.google.com/apis/protocolbuffers/docs/reference/python/google.protobuf.descriptor.EnumDescriptor-class.html
-                            schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
-                                'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name,
-
-                            vehicle_id=tu.vehicle.id,
-                            vehicle_label=tu.vehicle.label,
-                            vehicle_license_plate=tu.vehicle.license_plate,
-                            timestamp=timestamp)
-
-                        for stu in tu.stop_time_update:
-                            dbstu = StopTimeUpdate(
-                                stop_sequence=stu.stop_sequence,
-                                stop_id=stu.stop_id,
-                                arrival_delay=stu.arrival.delay,
-                                arrival_time=stu.arrival.time,
-                                arrival_uncertainty=stu.arrival.uncertainty,
-                                departure_delay=stu.departure.delay,
-                                departure_time=stu.departure.time,
-                                departure_uncertainty=stu.departure.uncertainty,
-                                schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
-                                    'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name
-                            )
-                            session.add(dbstu)
-                            dbtu.StopTimeUpdates.append(dbstu)
-
-                        session.add(dbtu)
+                    process_trip_updates(fm, opts, session)
 
                 if opts.alerts:
                     fm = gtfs_realtime_pb2.FeedMessage()
-                    fm.ParseFromString(
-                        urlopen(opts.alerts).read()
-                    )
+                    process_alerts(fm, opts, session)
 
-                    # Convert this a Python object, and save it to be placed into each
-                    # trip_update
-                    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
-                    # Check the feed version
-                    if fm.header.gtfs_realtime_version != u'1.0':
-                        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
-
-                        logging.info('Adding %s alerts', len(fm.entity))
-                        for entity in fm.entity:
-                            alert = entity.alert
-                            dbalert = Alert(
-                                start=alert.active_period[0].start,
-                                end=alert.active_period[0].end,
-                                cause=alert.DESCRIPTOR.enum_types_by_name['Cause'].values_by_number[alert.cause].name,
-                                effect=alert.DESCRIPTOR.enum_types_by_name['Effect'].values_by_number[alert.effect].name,
-                                url=getTrans(alert.url, opts.lang),
-                                header_text=getTrans(alert.header_text, opts.lang),
-                                description_text=getTrans(alert.description_text,
-                                                          opts.lang)
-                            )
-
-                            session.add(dbalert)
-                            for ie in alert.informed_entity:
-                                dbie = EntitySelector(
-                                    agency_id=ie.agency_id,
-                                    route_id=ie.route_id,
-                                    route_type=ie.route_type,
-                                    stop_id=ie.stop_id,
-
-                                    trip_id=ie.trip.trip_id,
-                                    trip_route_id=ie.trip.route_id,
-                                    trip_start_time=ie.trip.start_time,
-                                    trip_start_date=ie.trip.start_date)
-                                session.add(dbie)
-                                dbalert.InformedEntities.append(dbie)
                 if opts.vehiclePositions:
                     fm = gtfs_realtime_pb2.FeedMessage()
-                    fm.ParseFromString(
-                        urlopen(opts.vehiclePositions).read()
-                    )
-
-                    # Convert this a Python object, and save it to be placed into each
-                    # vehicle_position
-                    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
-                    # Check the feed version
-                    if fm.header.gtfs_realtime_version != u'1.0':
-                        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
-
-                    logging.info('Adding %s vehicle_positions', len(fm.entity))
-                    for entity in fm.entity:
-
-                        vp = entity.vehicle
-
-                        dbvp = VehiclePosition(
-                            trip_id=vp.trip.trip_id,
-                            route_id=vp.trip.route_id,
-                            trip_start_time=vp.trip.start_time,
-                            trip_start_date=vp.trip.start_date,
-                            vehicle_id=vp.vehicle.id,
-                            vehicle_label=vp.vehicle.label,
-                            vehicle_license_plate=vp.vehicle.license_plate,
-                            position_latitude=vp.position.latitude,
-                            position_longitude=vp.position.longitude,
-                            position_bearing=vp.position.bearing,
-                            position_speed=vp.position.speed,
-                            occupancy_status=gtfs_realtime_pb2.VehicleDescriptor.OccupancyStatus.DESCRIPTOR.values_by_number[
-                                vp.occupancy_status].name,
-                            timestamp=timestamp)
-
-                        session.add(dbvp)
+                    process_vehicle_positions(fm, opts, session)
 
                 # This does deletes and adds, since it's atomic it never leaves us
                 # without data
