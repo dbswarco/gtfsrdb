@@ -40,7 +40,7 @@ def time_it(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        print(f"{func.__name__} took {end - start:.4f} seconds")
+        logging.debug(f"{func.__name__} took {end - start:.4f} seconds")
         return result
     return wrapper
 
@@ -77,7 +77,10 @@ def parse_options():
                  help='Kill process after this many minutes')
 
     p.add_option('-v', '--verbose', default=False, dest='verbose',
-                 action='store_true', help='Print generated SQL')
+                 action='store_true', help='Print process run times')
+
+    p.add_option('-vv', '--very-verbose', default=False, dest='veryverbose',
+                 action='store_true', help='Print process run times and generated SQL')
 
     p.add_option('-q', '--quiet', default=False, dest='quiet',
                  action='store_true', help="Don't print warnings and status messages")
@@ -91,7 +94,7 @@ def parse_options():
 def setup_logger(opts):
     if opts.quiet:
         level = logging.ERROR
-    elif opts.verbose:
+    elif opts.verbose or opts.veryverbose:
         level = logging.DEBUG
     else:
         level = logging.WARNING
@@ -112,17 +115,17 @@ def setup_logger(opts):
         exit(1)
 
     if opts.alerts is None:
-        logging.warning('Warning: no alert URL specified, proceeding without alerts')
+        logging.warning('No alert URL specified')
 
     if opts.tripUpdates is None:
-        logging.warning('Warning: no trip update URL specified, proceeding without trip updates')
+        logging.warning('No trip update URL specified')
 
     if opts.vehiclePositions is None:
-        logging.warning('Warning: no vehicle positions URL specified, proceeding without vehicle positions')
+        logging.warning('No vehicle positions URL specified')
 
 
 @time_it
-def getTrans(string, lang):
+def get_translation(string, lang):
     '''Get a specific translation from a TranslatedString.'''
     # If we don't find the requested language, return this
     untranslated = None
@@ -212,10 +215,10 @@ def process_alerts(fm, opts, session):
             end=alert.active_period[0].end,
             cause=alert.DESCRIPTOR.enum_types_by_name['Cause'].values_by_number[alert.cause].name,
             effect=alert.DESCRIPTOR.enum_types_by_name['Effect'].values_by_number[alert.effect].name,
-            url=getTrans(alert.url, opts.lang),
-            header_text=getTrans(alert.header_text, opts.lang),
-            description_text=getTrans(alert.description_text,
-                                      opts.lang)
+            url=get_translation(alert.url, opts.lang),
+            header_text=get_translation(alert.header_text, opts.lang),
+            description_text=get_translation(alert.description_text,
+                                             opts.lang)
         )
 
         session.add(dbalert)
@@ -275,7 +278,7 @@ def main():
     # Set up a logger
     setup_logger(opts)
     # Connect to the database
-    engine = create_engine(opts.dsn, echo=opts.verbose)
+    engine = create_engine(opts.dsn, echo=opts.veryverbose)
     # Create a database inspector
     insp = inspect(engine)
     # sessionmaker returns a class
@@ -352,6 +355,7 @@ def main():
                 keep_running = False
             else:
                 loop_time = loop_end - loop_start
+                logging.debug(f"Total time to query all feeds took {loop_time:.4f} seconds")
                 if loop_time < opts.timeout:
                     time.sleep(loop_time)
 
