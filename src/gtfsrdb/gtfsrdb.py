@@ -139,11 +139,9 @@ def get_translation(string, lang):
     '''Get a specific translation from a TranslatedString.'''
     # If we don't find the requested language, return this
     untranslated = None
-
     # single translation, return it
     if len(string.translation) == 1:
         return string.translation[0].text
-
     for t in string.translation:
         if t.language == lang:
             return t.text
@@ -158,22 +156,17 @@ def process_trip_updates(fm, opts, session):
     fm.ParseFromString(
         urlopen(opts.tripUpdates).read()
     )
-
     # Convert this a Python object, and save it to be placed into each
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
     logging.info('Adding %s trip updates', len(fm.entity))
     for entity in fm.entity:
-
         tu = entity.trip_update
-
         dbtu = TripUpdate(
             trip_id=tu.trip.trip_id,
             route_id=tu.trip.route_id,
             trip_start_time=tu.trip.start_time,
             trip_start_date=tu.trip.start_date,
-
             # get the schedule relationship
             # This is somewhat undocumented, but by referencing the
             # DESCRIPTOR.enum_types_by_name, you get a dict of enum types
@@ -181,12 +174,10 @@ def process_trip_updates(fm, opts, session):
             # http://code.google.com/apis/protocolbuffers/docs/reference/python/google.protobuf.descriptor.EnumDescriptor-class.html
             schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
                 'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name,
-
             vehicle_id=tu.vehicle.id,
             vehicle_label=tu.vehicle.label,
             vehicle_license_plate=tu.vehicle.license_plate,
             timestamp=timestamp)
-
         for stu in tu.stop_time_update:
             dbstu = StopTimeUpdate(
                 stop_sequence=stu.stop_sequence,
@@ -202,7 +193,6 @@ def process_trip_updates(fm, opts, session):
             )
             session.add(dbstu)
             dbtu.StopTimeUpdates.append(dbstu)
-
         session.add(dbtu)
     pass
 
@@ -212,11 +202,9 @@ def process_alerts(fm, opts, session):
     fm.ParseFromString(
         urlopen(opts.alerts).read()
     )
-
     # Convert this a Python object, and save it to be placed into each
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
     logging.info('Adding %s alerts', len(fm.entity))
     for entity in fm.entity:
         alert = entity.alert
@@ -230,7 +218,6 @@ def process_alerts(fm, opts, session):
             description_text=get_translation(alert.description_text,
                                              opts.lang)
         )
-
         session.add(dbalert)
         for ie in alert.informed_entity:
             dbie = EntitySelector(
@@ -238,7 +225,6 @@ def process_alerts(fm, opts, session):
                 route_id=ie.route_id,
                 route_type=ie.route_type,
                 stop_id=ie.stop_id,
-
                 trip_id=ie.trip.trip_id,
                 trip_route_id=ie.trip.route_id,
                 trip_start_time=ie.trip.start_time,
@@ -253,15 +239,12 @@ def process_vehicle_positions(fm, opts, session):
     fm.ParseFromString(
         urlopen(opts.vehiclePositions).read()
     )
-
     # Convert this a Python object, and save it to be placed into each
     # vehicle_position
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
     logging.info('Adding %s vehicle positions', len(fm.entity))
     for entity in fm.entity:
         vp = entity.vehicle
-
         dbvp = VehiclePosition(
             trip_id=vp.trip.trip_id,
             route_id=vp.trip.route_id,
@@ -277,7 +260,6 @@ def process_vehicle_positions(fm, opts, session):
             occupancy_status=gtfs_realtime_pb2.VehicleDescriptor.OccupancyStatus.DESCRIPTOR.values_by_number[
                 vp.occupancy_status].name,
             timestamp=timestamp)
-
         session.add(dbvp)
     pass
 
@@ -323,7 +305,6 @@ def main():
         if fm.header.gtfs_realtime_version != u'1.0':
             logging.warning('Warning: feed version mismatch: found %s, expected 1.0',
                             fm.header.gtfs_realtime_version)
-
         keep_running = True
         while keep_running:
             loop_start = time.time()
@@ -335,25 +316,19 @@ def main():
                 logging.info(f"Collecting GTFS-RT feed data at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 if opts.deleteOld:
                     delete_old(session)
-
                 # Retrieve the feed message to supply to each of the feed processing functions
                 fm = gtfs_realtime_pb2.FeedMessage()
-
                 if opts.tripUpdates:
                     process_trip_updates(fm, opts, session)
-
                 if opts.alerts:
                     process_alerts(fm, opts, session)
-
                 if opts.vehiclePositions:
                     process_vehicle_positions(fm, opts, session)
-
                 commit(session)
             except:
                 # else:
                 logging.error('Exception occurred in iteration')
                 logging.error(sys.exc_info())
-
             # put this outside the try...except so it won't be skipped when something
             # fails
             # also, makes it easier to end the process with ctrl-c, b/c a
@@ -370,9 +345,9 @@ def main():
                 else:
                     overrun_time = loop_time - opts.timeout
                     logging.warning(f"Total time to query all fields overran timeout by {overrun_time:.4f} seconds")
-
         logging.info("Closing session . . .")
         session.close()
+
 
 if __name__ == "__main__":
     main()
