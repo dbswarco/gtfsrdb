@@ -45,6 +45,82 @@ def time_it(func):
     return wrapper
 
 
+def parse_options():
+    p = OptionParser()
+
+    p.add_option('-t', '--trip-updates', dest='tripUpdates', default=None,
+                 help='The trip updates URL', metavar='URL')
+
+    p.add_option('-a', '--alerts', default=None, dest='alerts',
+                 help='The alerts URL', metavar='URL')
+
+    p.add_option('-p', '--vehicle-positions', dest='vehiclePositions', default=None,
+                 help='The vehicle positions URL', metavar='URL')
+
+    p.add_option('-d', '--database', default=None, dest='dsn',
+                 help='Database connection string', metavar='DSN')
+
+    p.add_option('-o', '--discard-old', default=False, dest='deleteOld',
+                 action='store_true',
+                 help='Discard old updates, so the database is always current')
+
+    p.add_option('-c', '--create-tables', default=False, dest='create',
+                 action='store_true', help="Create tables if they aren't found")
+
+    p.add_option('-1', '--once', default=False, dest='once', action='store_true',
+                 help='Only issue a request once')
+
+    p.add_option('-w', '--wait', default=30, type='int', metavar='SECS',
+                 dest='timeout', help='Time to wait between requests (in seconds)')
+
+    p.add_option('-k', '--kill-after', default=0, dest='killAfter', type="float",
+                 help='Kill process after this many minutes')
+
+    p.add_option('-v', '--verbose', default=False, dest='verbose',
+                 action='store_true', help='Print generated SQL')
+
+    p.add_option('-q', '--quiet', default=False, dest='quiet',
+                 action='store_true', help="Don't print warnings and status messages")
+
+    p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
+                 help='When multiple translations are available, prefer this language')
+
+    return p.parse_args()
+
+
+def setup_logger(opts):
+    if opts.quiet:
+        level = logging.ERROR
+    elif opts.verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.WARNING
+
+    logger = logging.getLogger()
+    logger.setLevel(level)
+    loghandler = logging.StreamHandler(sys.stdout)
+    logformatter = logging.Formatter(fmt='%(message)s')
+    loghandler.setFormatter(logformatter)
+    logger.addHandler(loghandler)
+
+    if opts.dsn is None:
+        logging.error('No database specified!')
+        exit(1)
+
+    if opts.alerts is None and opts.tripUpdates is None and opts.vehiclePositions is None:
+        logging.error('No trip updates, alerts, or vehicle positions URLs were specified!')
+        exit(1)
+
+    if opts.alerts is None:
+        logging.warning('Warning: no alert URL specified, proceeding without alerts')
+
+    if opts.tripUpdates is None:
+        logging.warning('Warning: no trip update URL specified, proceeding without trip updates')
+
+    if opts.vehiclePositions is None:
+        logging.warning('Warning: no vehicle positions URL specified, proceeding without vehicle positions')
+
+
 @time_it
 def getTrans(string, lang):
     '''Get a specific translation from a TranslatedString.'''
@@ -206,91 +282,21 @@ def process_vehicle_positions(fm, opts, session):
 
 
 def main():
-    p = OptionParser()
-
-    p.add_option('-t', '--trip-updates', dest='tripUpdates', default=None,
-                 help='The trip updates URL', metavar='URL')
-
-    p.add_option('-a', '--alerts', default=None, dest='alerts',
-                 help='The alerts URL', metavar='URL')
-
-    p.add_option('-p', '--vehicle-positions', dest='vehiclePositions', default=None,
-                 help='The vehicle positions URL', metavar='URL')
-
-    p.add_option('-d', '--database', default=None, dest='dsn',
-                 help='Database connection string', metavar='DSN')
-
-    p.add_option('-o', '--discard-old', default=False, dest='deleteOld',
-                 action='store_true',
-                 help='Discard old updates, so the database is always current')
-
-    p.add_option('-c', '--create-tables', default=False, dest='create',
-                 action='store_true', help="Create tables if they aren't found")
-
-    p.add_option('-1', '--once', default=False, dest='once', action='store_true',
-                 help='Only issue a request once')
-
-    p.add_option('-w', '--wait', default=30, type='int', metavar='SECS',
-                 dest='timeout', help='Time to wait between requests (in seconds)')
-
-    p.add_option('-k', '--kill-after', default=0, dest='killAfter', type="float",
-                 help='Kill process after this many minutes')
-
-    p.add_option('-v', '--verbose', default=False, dest='verbose',
-                 action='store_true', help='Print generated SQL')
-
-    p.add_option('-q', '--quiet', default=False, dest='quiet',
-                 action='store_true', help="Don't print warnings and status messages")
-
-    p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
-                 help='When multiple translations are available, prefer this language')
-
-    opts, args = p.parse_args()
-
-    if opts.quiet:
-        level = logging.ERROR
-    elif opts.verbose:
-        level = logging.DEBUG
-    else:
-        level = logging.WARNING
-
+    # Parse command line options/args
+    opts,args = parse_options()
     # Set up a logger
-    logger = logging.getLogger()
-    logger.setLevel(level)
-    loghandler = logging.StreamHandler(sys.stdout)
-    logformatter = logging.Formatter(fmt='%(message)s')
-    loghandler.setFormatter(logformatter)
-    logger.addHandler(loghandler)
-
-    if opts.dsn is None:
-        logging.error('No database specified!')
-        exit(1)
-
-    if opts.alerts is None and opts.tripUpdates is None and opts.vehiclePositions is None:
-        logging.error('No trip updates, alerts, or vehicle positions URLs were specified!')
-        exit(1)
-
-    if opts.alerts is None:
-        logging.warning('Warning: no alert URL specified, proceeding without alerts')
-
-    if opts.tripUpdates is None:
-        logging.warning('Warning: no trip update URL specified, proceeding without trip updates')
-
-    if opts.vehiclePositions is None:
-        logging.warning('Warning: no vehicle positions URL specified, proceeding without vehicle positions')
-
+    setup_logger(opts)
     # Connect to the database
     engine = create_engine(opts.dsn, echo=opts.verbose)
-
     # Create a database inspector
     insp = inspect(engine)
     # sessionmaker returns a class
     Session = sessionmaker(bind=engine)
-    session = Session()
 
-    # Check if it has the tables
-    # Base from model.py
+    # Use a single database session while running
     with Session() as session:
+        # Check if it has the tables
+        # Base from model.py
         for table in Base.metadata.tables.keys():
             if not insp.has_table(table):
                 if opts.create:
