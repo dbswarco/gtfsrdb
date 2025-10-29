@@ -150,10 +150,6 @@ def process_trip_updates(fm, opts, session):
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
 
-    # Check the feed version
-    if fm.header.gtfs_realtime_version != u'1.0':
-        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
-
     logging.info('Adding %s trip updates', len(fm.entity))
     for entity in fm.entity:
 
@@ -208,38 +204,34 @@ def process_alerts(fm, opts, session):
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
 
-    # Check the feed version
-    if fm.header.gtfs_realtime_version != u'1.0':
-        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
+    logging.info('Adding %s alerts', len(fm.entity))
+    for entity in fm.entity:
+        alert = entity.alert
+        dbalert = Alert(
+            start=alert.active_period[0].start,
+            end=alert.active_period[0].end,
+            cause=alert.DESCRIPTOR.enum_types_by_name['Cause'].values_by_number[alert.cause].name,
+            effect=alert.DESCRIPTOR.enum_types_by_name['Effect'].values_by_number[alert.effect].name,
+            url=getTrans(alert.url, opts.lang),
+            header_text=getTrans(alert.header_text, opts.lang),
+            description_text=getTrans(alert.description_text,
+                                      opts.lang)
+        )
 
-        logging.info('Adding %s alerts', len(fm.entity))
-        for entity in fm.entity:
-            alert = entity.alert
-            dbalert = Alert(
-                start=alert.active_period[0].start,
-                end=alert.active_period[0].end,
-                cause=alert.DESCRIPTOR.enum_types_by_name['Cause'].values_by_number[alert.cause].name,
-                effect=alert.DESCRIPTOR.enum_types_by_name['Effect'].values_by_number[alert.effect].name,
-                url=getTrans(alert.url, opts.lang),
-                header_text=getTrans(alert.header_text, opts.lang),
-                description_text=getTrans(alert.description_text,
-                                          opts.lang)
-            )
+        session.add(dbalert)
+        for ie in alert.informed_entity:
+            dbie = EntitySelector(
+                agency_id=ie.agency_id,
+                route_id=ie.route_id,
+                route_type=ie.route_type,
+                stop_id=ie.stop_id,
 
-            session.add(dbalert)
-            for ie in alert.informed_entity:
-                dbie = EntitySelector(
-                    agency_id=ie.agency_id,
-                    route_id=ie.route_id,
-                    route_type=ie.route_type,
-                    stop_id=ie.stop_id,
-
-                    trip_id=ie.trip.trip_id,
-                    trip_route_id=ie.trip.route_id,
-                    trip_start_time=ie.trip.start_time,
-                    trip_start_date=ie.trip.start_date)
-                session.add(dbie)
-                dbalert.InformedEntities.append(dbie)
+                trip_id=ie.trip.trip_id,
+                trip_route_id=ie.trip.route_id,
+                trip_start_time=ie.trip.start_time,
+                trip_start_date=ie.trip.start_date)
+            session.add(dbie)
+            dbalert.InformedEntities.append(dbie)
     pass
 
 
@@ -252,10 +244,6 @@ def process_vehicle_positions(fm, opts, session):
     # Convert this a Python object, and save it to be placed into each
     # vehicle_position
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-
-    # Check the feed version
-    if fm.header.gtfs_realtime_version != u'1.0':
-        logging.warning('Warning: feed version has changed: found %s, expected 1.0', fm.header.gtfs_realtime_version)
 
     logging.info('Adding %s vehicle_positions', len(fm.entity))
     for entity in fm.entity:
@@ -309,8 +297,15 @@ def main():
         if opts.killAfter > 0:
             stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
 
+        # Check the feed version once
+        fm = gtfs_realtime_pb2.FeedMessage()
+        if fm.header.gtfs_realtime_version != u'1.0':
+            logging.warning('Warning: feed version mismatch: found %s, expected 1.0',
+                            fm.header.gtfs_realtime_version)
+
         keep_running = True
         while keep_running:
+            loop_start = time.time()
             if opts.killAfter > 0:
                 if datetime.datetime.now() > stop_time:
                     sys.exit()
@@ -351,11 +346,14 @@ def main():
             # fails
             # also, makes it easier to end the process with ctrl-c, b/c a
             # KeyboardInterrupt here will end the program (cleanly)
+            loop_end = time.time()
             if opts.once:
                 logging.info("Executed the load ONCE ... going to stop now...")
                 keep_running = False
             else:
-                time.sleep(opts.timeout)
+                loop_time = loop_end - loop_start
+                if loop_time < opts.timeout:
+                    time.sleep(loop_time)
 
         logging.info("Closing session . . .")
         session.close()
