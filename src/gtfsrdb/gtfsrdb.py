@@ -97,7 +97,7 @@ def setup_logger(opts):
     elif opts.verbose or opts.veryverbose:
         level = logging.DEBUG
     else:
-        level = logging.WARNING
+        level = logging.INFO
 
     logger = logging.getLogger()
     logger.setLevel(level)
@@ -258,7 +258,7 @@ def process_vehicle_positions(fm, opts, session):
     # vehicle_position
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
 
-    logging.info('Adding %s vehicle_positions', len(fm.entity))
+    logging.info('Adding %s vehicle positions', len(fm.entity))
     for entity in fm.entity:
         vp = entity.vehicle
 
@@ -367,6 +367,9 @@ def main():
                 logging.debug(f"Total time to query all feeds took {loop_time:.4f} seconds")
                 if loop_time < opts.timeout:
                     time.sleep(loop_time)
+                else:
+                    overrun_time = loop_time - opts.timeout
+                    logging.warning(f"Total time to query all fields overran timeout by {overrun_time:.4f} seconds")
 
         logging.info("Closing session . . .")
         session.close()
