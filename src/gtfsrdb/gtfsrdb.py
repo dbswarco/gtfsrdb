@@ -285,23 +285,24 @@ def main():
     # Create a database inspector
     insp = inspect(engine)
     # sessionmaker returns a class
-    session = sessionmaker(bind=engine)()
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
     # Check if it has the tables
     # Base from model.py
-    for table in Base.metadata.tables.keys():
-        if not insp.has_table(table):
-            if opts.create:
-                logging.info('Creating table %s', table)
-                Base.metadata.tables[table].create(engine)
-            else:
-                logging.error('Missing table %s! Use -c to create it.', table)
-                exit(1)
+    with Session() as session:
+        for table in Base.metadata.tables.keys():
+            if not insp.has_table(table):
+                if opts.create:
+                    logging.info('Creating table %s', table)
+                    Base.metadata.tables[table].create(engine)
+                else:
+                    logging.error('Missing table %s! Use -c to create it.', table)
+                    exit(1)
 
-    if opts.killAfter > 0:
-        stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
+        if opts.killAfter > 0:
+            stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
 
-    try:
         keep_running = True
         while keep_running:
             if opts.killAfter > 0:
@@ -317,21 +318,24 @@ def main():
                         for obj in session.query(theClass):
                             session.delete(obj)
 
+                fm = gtfs_realtime_pb2.FeedMessage()
+
                 if opts.tripUpdates:
-                    fm = gtfs_realtime_pb2.FeedMessage()
                     process_trip_updates(fm, opts, session)
 
                 if opts.alerts:
-                    fm = gtfs_realtime_pb2.FeedMessage()
                     process_alerts(fm, opts, session)
 
                 if opts.vehiclePositions:
-                    fm = gtfs_realtime_pb2.FeedMessage()
                     process_vehicle_positions(fm, opts, session)
 
                 # This does deletes and adds, since it's atomic it never leaves us
                 # without data
-                session.commit()
+                @time_it
+                def commit(ses):
+                    ses.commit()
+                    pass
+                commit(session)
             except:
                 # else:
                 logging.error('Exception occurred in iteration')
@@ -347,7 +351,6 @@ def main():
             else:
                 time.sleep(opts.timeout)
 
-    finally:
         logging.info("Closing session . . .")
         session.close()
 
