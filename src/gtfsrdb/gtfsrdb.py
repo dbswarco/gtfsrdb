@@ -314,7 +314,7 @@ def main():
                     sys.exit()
             try:
                 # if True:
-                print("Collecting GTFS-RT feed data at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                logging.info("Collecting GTFS-RT feed data at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 if opts.deleteOld:
                     # Go through all of the tables that we create, clear them
                     # Don't mess with other tables (i.e., tables from static GTFS)
