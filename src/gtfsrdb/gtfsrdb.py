@@ -35,6 +35,17 @@ import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
 
 
+def time_it(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f"{func.__name__} took {end - start:.4f} seconds")
+        return result
+    return wrapper
+
+
+@time_it
 def getTrans(string, lang):
     '''Get a specific translation from a TranslatedString.'''
     # If we don't find the requested language, return this
@@ -50,8 +61,10 @@ def getTrans(string, lang):
         if t.language is None:
             untranslated = t.text
     return untranslated
+pass
 
 
+@time_it
 def process_trip_updates(fm, opts, session):
     fm.ParseFromString(
         urlopen(opts.tripUpdates).read()
@@ -106,8 +119,10 @@ def process_trip_updates(fm, opts, session):
             dbtu.StopTimeUpdates.append(dbstu)
 
         session.add(dbtu)
+    pass
 
 
+@time_it
 def process_alerts(fm, opts, session):
     fm.ParseFromString(
         urlopen(opts.alerts).read()
@@ -149,8 +164,10 @@ def process_alerts(fm, opts, session):
                     trip_start_date=ie.trip.start_date)
                 session.add(dbie)
                 dbalert.InformedEntities.append(dbie)
+    pass
 
 
+@time_it
 def process_vehicle_positions(fm, opts, session):
     fm.ParseFromString(
         urlopen(opts.vehiclePositions).read()
@@ -185,6 +202,7 @@ def process_vehicle_positions(fm, opts, session):
             timestamp=timestamp)
 
         session.add(dbvp)
+    pass
 
 
 def main():
