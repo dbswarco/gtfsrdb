@@ -25,15 +25,12 @@ import time
 import sys
 from optparse import OptionParser
 import logging
-try:
-    from urllib2 import urlopen
-except ImportError:
-    from urllib.request import urlopen
+from urllib.request import urlopen, Request
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
-
+import json
 
 def time_it(func):
     def wrapper(*args, **kwargs):
@@ -70,7 +67,7 @@ def parse_options():
     p.add_option('-1', '--once', default=False, dest='once', action='store_true',
                  help='Only issue a request once')
 
-    p.add_option('-w', '--wait', default=30, type='int', metavar='SECS',
+    p.add_option('-w', '--wait', default=10, type='int', metavar='SECS',
                  dest='timeout', help='Time to wait between requests (in seconds)')
 
     p.add_option('-k', '--kill-after', default=0, dest='killAfter', type="float",
@@ -87,6 +84,9 @@ def parse_options():
 
     p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
                  help='When multiple translations are available, prefer this language')
+
+    p.add_option('-H', '--header', default=None,
+             help="Add HTML header options such as API key; must be formatted as JSON string.", metavar="HEADER")
 
     return p.parse_args()
 
@@ -123,6 +123,13 @@ def setup_logger(opts):
     if opts.vehiclePositions is None:
         logging.warning('No vehicle positions URL specified')
 
+    headers = {}
+    if opts.header is not None:
+        headers = json.loads(opts.header)
+
+    # Connect to the database
+    engine = create_engine(opts.dsn, echo=opts.verbose)
+
 
 @time_it
 def delete_old(session):
@@ -153,8 +160,10 @@ pass
 
 @time_it
 def process_trip_updates(fm, opts, session):
+    fm = gtfs_realtime_pb2.FeedMessage()
+    req = Request(opts.tripUpdates, headers=opts.headers)
     fm.ParseFromString(
-        urlopen(opts.tripUpdates).read()
+        urlopen(req).read()
     )
     # Convert this a Python object, and save it to be placed into each
     # trip_update
@@ -199,8 +208,10 @@ def process_trip_updates(fm, opts, session):
 
 @time_it
 def process_alerts(fm, opts, session):
+    fm = gtfs_realtime_pb2.FeedMessage()
+    req = Request(opts.alerts, headers=opts.headers)
     fm.ParseFromString(
-        urlopen(opts.alerts).read()
+        urlopen(req).read()
     )
     # Convert this a Python object, and save it to be placed into each
     # trip_update
@@ -236,8 +247,10 @@ def process_alerts(fm, opts, session):
 
 @time_it
 def process_vehicle_positions(fm, opts, session):
+    fm = gtfs_realtime_pb2.FeedMessage()
+    req = Request(opts.vehiclePositions, headers=opts.headers)
     fm.ParseFromString(
-        urlopen(opts.vehiclePositions).read()
+        urlopen(req).read()
     )
     # Convert this a Python object, and save it to be placed into each
     # vehicle_position
