@@ -88,6 +88,9 @@ def parse_options():
     p.add_option('-l', '--language', default='en', dest='lang', metavar='LANG',
                  help='When multiple translations are available, prefer this language')
 
+    p.add_option('--print-positions', default=None, dest='print_positions',
+                 help='Print position updates for a given route number')
+
     return p.parse_args()
 
 
@@ -264,6 +267,10 @@ def process_vehicle_positions(fm, opts, session):
                 vp.occupancy_status].name,
             timestamp=timestamp)
         session.add(dbvp)
+        if (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
+                and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")]):
+            logging.info(f'{dbvp.timestamp}: Route {dbvp.route_id} Veh {dbvp.vehicle_id} '
+                         f'Position {dbvp.position_latitude}, {dbvp.position_longitude}')
     pass
 
 
@@ -343,8 +350,8 @@ def main():
             else:
                 loop_time = loop_end - loop_start
                 logging.debug(f"Total time to query all feeds took {loop_time:.4f} seconds")
-                if loop_time < opts.timeout:
-                    time.sleep(loop_time)
+                if loop_time <= opts.timeout:
+                    time.sleep(opts.timeout)
                 else:
                     overrun_time = loop_time - opts.timeout
                     logging.warning(f"Total time to query all fields overran timeout by {overrun_time:.4f} seconds")

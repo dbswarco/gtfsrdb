@@ -7,4 +7,4 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-psql -d "$DB" -h "$DB_HOST" -U ott -c "drop database $1;"
+psql -d "$DB" -h "$DB_HOST" -U ott -c "DROP DATABASE $1";
