@@ -264,8 +264,9 @@ def process_vehicle_positions(fm, opts, session):
                 vp.occupancy_status].name,
             timestamp=timestamp)
         session.add(dbvp)
-        if (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
-                and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")]):
+        if (opts.print_positions is not None and
+                (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
+                and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
             logging.info(f'{dbvp.timestamp}: Route {dbvp.route_id} Veh {dbvp.vehicle_id} '
                          f'Position {dbvp.position_latitude}, {dbvp.position_longitude}')
     pass
