@@ -28,8 +28,8 @@ import logging
 from urllib.request import urlopen, Request
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
-import gtfsrdb.gtfs_realtime_pb2 as gtfs_realtime_pb2
-from gtfsrdb.model import *
+import gtfs_realtime_pb2 as gtfs_realtime_pb2
+from model import *
 import json
 
 def main():
@@ -301,6 +301,9 @@ def main():
                             position_longitude=vp.position.longitude,
                             position_bearing=vp.position.bearing,
                             position_speed=vp.position.speed,
+                            vehicle_stop_status=str(vp.vehicle_stop_status),
+                            #vehicle_stop_status=gtfs_realtime_pb2.VehicleDescriptor.VehicleStopStatus.DESCRIPTOR.
+                            #    values_by_number[vp.vehicle_stop_status].name,
                             occupancy_status=gtfs_realtime_pb2.VehicleDescriptor.OccupancyStatus.DESCRIPTOR.values_by_number[
                                 vp.occupancy_status].name,
                             timestamp=timestamp)

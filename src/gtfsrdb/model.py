@@ -155,6 +155,8 @@ class VehiclePosition(Base):
     position_bearing = Column(Float)
     position_speed = Column(Float)
 
+    vehicle_stop_status = Column(Text)
+
     occupancy_status = Column(Text)
 
     # moved from the header, and reformatted as datetime
