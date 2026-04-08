@@ -248,11 +248,27 @@ def process_vehicle_positions(fm, opts, session):
     logging.info('Adding %s vehicle positions', len(fm.entity))
     for entity in fm.entity:
         vp = entity.vehicle
+
+        # Handle optional fields with HasField check or default values
+        trip_direction_id = vp.trip.direction_id if vp.trip.HasField('direction_id') else None
+        trip_schedule_relationship = gtfs_realtime_pb2.TripDescriptor.ScheduleRelationship.Name(
+            vp.trip.schedule_relationship) if vp.trip.HasField('schedule_relationship') else None
+
+        current_stop_sequence = vp.current_stop_sequence if vp.HasField('current_stop_sequence') else None
+        stop_id = vp.stop_id if vp.HasField('stop_id') else None
+
+        position_odometer = vp.position.odometer if vp.position.HasField('odometer') else None
+
+        congestion_level = gtfs_realtime_pb2.VehiclePosition.CongestionLevel.Name(
+            vp.congestion_level) if vp.HasField('congestion_level') else None
+
         dbvp = VehiclePosition(
             trip_id=vp.trip.trip_id,
             route_id=vp.trip.route_id,
             trip_start_time=vp.trip.start_time,
             trip_start_date=vp.trip.start_date,
+            trip_direction_id=trip_direction_id,
+            trip_schedule_relationship=trip_schedule_relationship,
             vehicle_id=vp.vehicle.id,
             vehicle_label=vp.vehicle.label,
             vehicle_license_plate=vp.vehicle.license_plate,
@@ -260,7 +276,11 @@ def process_vehicle_positions(fm, opts, session):
             position_longitude=vp.position.longitude,
             position_bearing=vp.position.bearing,
             position_speed=vp.position.speed,
+            position_odometer=position_odometer,
+            current_stop_sequence=current_stop_sequence,
+            stop_id=stop_id,
             current_status=gtfs_realtime_pb2.VehiclePosition.VehicleStopStatus.Name(vp.current_status),
+            congestion_level=congestion_level,
             occupancy_status=gtfs_realtime_pb2.VehiclePosition.OccupancyStatus.Name(vp.occupancy_status),
             timestamp=timestamp)
         session.add(dbvp)
@@ -269,7 +289,9 @@ def process_vehicle_positions(fm, opts, session):
                 and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
             logging.info(f'{dbvp.timestamp}: Route {dbvp.route_id}, Veh {dbvp.vehicle_id}: '
                          f'Position {dbvp.position_latitude}, {dbvp.position_longitude}, '
-                         f'Status {dbvp.current_status}, Occupancy {dbvp.occupancy_status}')
+                         f'Stop {dbvp.stop_id} (seq {dbvp.current_stop_sequence}), '
+                         f'Status {dbvp.current_status}, Occupancy {dbvp.occupancy_status}, '
+                         f'Congestion {dbvp.congestion_level}')
     pass
 
 

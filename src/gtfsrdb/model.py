@@ -143,6 +143,8 @@ class VehiclePosition(Base):
     route_id = Column(Text)
     trip_start_time = Column(Text)
     trip_start_date = Column(Text)
+    trip_direction_id = Column(Integer)
+    trip_schedule_relationship = Column(Text)
 
     # Collapsed VehicleDescriptor
     vehicle_id = Column(Text)
@@ -154,9 +156,15 @@ class VehiclePosition(Base):
     position_longitude = Column(Float)
     position_bearing = Column(Float)
     position_speed = Column(Float)
+    position_odometer = Column(Float)
 
+    # Current stop information
+    current_stop_sequence = Column(Integer)
+    stop_id = Column(Text)
     current_status = Column(Text)
 
+    # Congestion and occupancy
+    congestion_level = Column(Text)
     occupancy_status = Column(Text)
 
     # moved from the header, and reformatted as datetime
