@@ -260,15 +260,13 @@ def process_vehicle_positions(fm, opts, session):
             position_longitude=vp.position.longitude,
             position_bearing=vp.position.bearing,
             position_speed=vp.position.speed,
-            vehicle_stop_status=str(vp.vehicle_stop_status),
-                            #vehicle_stop_status=gtfs_realtime_pb2.VehicleDescriptor.VehicleStopStatus.DESCRIPTOR.
-                            #    values_by_number[vp.vehicle_stop_status].name,
             occupancy_status=gtfs_realtime_pb2.VehicleDescriptor.OccupancyStatus.DESCRIPTOR.values_by_number[
                 vp.occupancy_status].name,
             timestamp=timestamp)
         session.add(dbvp)
-        if (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
-                and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")]):
+        if (opts.print_positions is not None and
+                (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
+                and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
             logging.info(f'{dbvp.timestamp}: Route {dbvp.route_id} Veh {dbvp.vehicle_id} '
                          f'Position {dbvp.position_latitude}, {dbvp.position_longitude}')
     pass
