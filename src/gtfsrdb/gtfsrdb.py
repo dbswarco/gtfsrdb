@@ -292,6 +292,19 @@ def process_vehicle_positions(fm, opts, session):
                          f'Stop {dbvp.stop_id} (seq {dbvp.current_stop_sequence}), '
                          f'Status {dbvp.current_status}, Occupancy {dbvp.occupancy_status}, '
                          f'Congestion {dbvp.congestion_level}')
+            try:
+                with open('print_positions.csv', 'x') as f:
+                    f.write(f'Timestamp, Route ID, Vehicle ID, Latitude, Longitude, Stop ID, Current Stop Sequence, '
+                            f'Current Status, Occupancy Status, Congestion Level\n')
+            except FileExistsError:
+                continue
+            finally:
+                with open('print_positions.csv', 'a') as f:
+                    f.write(f'{dbvp.timestamp}, {dbvp.route_id}, {dbvp.vehicle_id}, '
+                             f'{dbvp.position_latitude}, {dbvp.position_longitude}, '
+                             f'{dbvp.stop_id}, (seq {dbvp.current_stop_sequence}), '
+                             f'{dbvp.current_status}, {dbvp.occupancy_status}, '
+                             f'{dbvp.congestion_level}\n')
     pass
 
 
