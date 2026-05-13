@@ -25,24 +25,12 @@ import time
 import sys
 from optparse import OptionParser
 import logging
-try:
-    from urllib2 import urlopen
-except ImportError:
-    from urllib.request import urlopen
+import json
+from urllib.request import urlopen, Request
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
-
-
-def time_it(func):
-    def wrapper(*args, **kwargs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        end = time.time()
-        logging.debug(f"Function '{func.__name__}' took {end - start:.4f} seconds")
-        return result
-    return wrapper
 
 
 def parse_options():
@@ -70,17 +58,14 @@ def parse_options():
     p.add_option('-1', '--once', default=False, dest='once', action='store_true',
                  help='Only issue a request once')
 
-    p.add_option('-w', '--wait', default=30, type='int', metavar='SECS',
+    p.add_option('-w', '--wait', default=1, type='int', metavar='SECS',
                  dest='timeout', help='Time to wait between requests (in seconds)')
 
     p.add_option('-k', '--kill-after', default=0, dest='killAfter', type="float",
                  help='Kill process after this many minutes')
 
     p.add_option('-v', '--verbose', default=False, dest='verbose',
-                 action='store_true', help='Print process run times')
-
-    p.add_option('--very-verbose', default=False, dest='veryverbose',
-                 action='store_true', help='Print process run times and generated SQL')
+                 action='store_true', help='Print generated SQL')
 
     p.add_option('-q', '--quiet', default=False, dest='quiet',
                  action='store_true', help="Don't print warnings and status messages")
@@ -91,13 +76,16 @@ def parse_options():
     p.add_option('--print-positions', default=None, dest='print_positions',
                  help='Print position updates for a given route number')
 
+    p.add_option('-H', '--header', default=None,
+             help="Add HTTP header options such as API key. Format: JSON string like '{\"Key\":\"Value\"}' or simple 'Key:Value'", metavar="HEADER")
+
     return p.parse_args()
 
 
 def setup_logger(opts):
     if opts.quiet:
         level = logging.ERROR
-    elif opts.verbose or opts.veryverbose:
+    elif opts.verbose:
         level = logging.DEBUG
     else:
         level = logging.INFO
@@ -127,7 +115,6 @@ def setup_logger(opts):
         logging.warning('No vehicle positions URL specified')
 
 
-@time_it
 def delete_old(session):
     # Go through all of the tables that we create, clear them
     # Don't mess with other tables (i.e., tables from static GTFS)
@@ -137,7 +124,6 @@ def delete_old(session):
     pass
 
 
-@time_it
 def get_translation(string, lang):
     '''Get a specific translation from a TranslatedString.'''
     # If we don't find the requested language, return this
@@ -154,11 +140,38 @@ def get_translation(string, lang):
 pass
 
 
-@time_it
+def parse_headers(header_string):
+    """Parse header string as either JSON or simple key:value format."""
+    if not header_string or not header_string.strip():
+        return None
+
+    header_string = header_string.strip()
+
+    # Try to parse as JSON first
+    if header_string.startswith('{'):
+        try:
+            return json.loads(header_string)
+        except json.JSONDecodeError as e:
+            logging.error(f'Failed to parse header as JSON: {e}')
+            logging.error(f'Header value: {repr(header_string)}')
+            raise
+
+    # Otherwise, treat as simple key:value or key=value format
+    if ':' in header_string:
+        key, value = header_string.split(':', 1)
+        return {key.strip(): value.strip()}
+    elif '=' in header_string:
+        key, value = header_string.split('=', 1)
+        return {key.strip(): value.strip()}
+    else:
+        logging.error(f'Header format not recognized. Use JSON or Key:Value format.')
+        logging.error(f'Header value: {repr(header_string)}')
+        raise ValueError(f'Invalid header format: {header_string}')
+
+
 def process_trip_updates(fm, opts, session):
-    fm.ParseFromString(
-        urlopen(opts.tripUpdates).read()
-    )
+    headers = parse_headers(opts.header)
+    fm.ParseFromString(urlopen(Request(opts.tripUpdates, headers=headers)).read())
     # Convert this a Python object, and save it to be placed into each
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
@@ -200,11 +213,9 @@ def process_trip_updates(fm, opts, session):
     pass
 
 
-@time_it
 def process_alerts(fm, opts, session):
-    fm.ParseFromString(
-        urlopen(opts.alerts).read()
-    )
+    headers = parse_headers(opts.header)
+    fm.ParseFromString(urlopen(Request(opts.alerts, headers=headers)).read())
     # Convert this a Python object, and save it to be placed into each
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
@@ -237,11 +248,9 @@ def process_alerts(fm, opts, session):
     pass
 
 
-@time_it
 def process_vehicle_positions(fm, opts, session):
-    fm.ParseFromString(
-        urlopen(opts.vehiclePositions).read()
-    )
+    headers = parse_headers(opts.header)
+    fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
     # Convert this a Python object, and save it to be placed into each
     # vehicle_position
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
@@ -310,7 +319,6 @@ def process_vehicle_positions(fm, opts, session):
 
 # This does deletes and adds, since it's atomic it never leaves us
 # without data
-@time_it
 def commit(ses):
     ses.commit()
     pass
@@ -322,7 +330,7 @@ def main():
     # Set up a logger
     setup_logger(opts)
     # Connect to the database
-    engine = create_engine(opts.dsn, echo=opts.veryverbose)
+    engine = create_engine(opts.dsn, echo=opts.verbose)
     # Create a database inspector
     insp = inspect(engine)
     # sessionmaker returns a class
