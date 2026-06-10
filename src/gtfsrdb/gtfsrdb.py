@@ -176,6 +176,8 @@ def process_trip_updates(fm, opts, session=None):
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
     logging.info('Adding %s trip updates', len(fm.entity))
+    dbtu = None
+    dbstu = None
     for entity in fm.entity:
         tu = entity.trip_update
         dbtu = TripUpdate(
@@ -207,15 +209,22 @@ def process_trip_updates(fm, opts, session=None):
                 schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
                     'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name
             )
-            session.add(dbstu)
+            if session:
+                session.add(dbstu)
             dbtu.StopTimeUpdates.append(dbstu)
-        session.add(dbtu)
-    pass
+        if session:
+            session.add(dbtu)
+    if session:
+        pass
+    else:
+        return dbstu, dbtu
 
 
 def process_alerts(fm, opts, session=None):
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.alerts, headers=headers)).read())
+    dbalert = None
+    dbie = None
     # Convert this a Python object, and save it to be placed into each
     # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
@@ -232,7 +241,8 @@ def process_alerts(fm, opts, session=None):
             description_text=get_translation(alert.description_text,
                                              opts.lang)
         )
-        session.add(dbalert)
+        if session:
+            session.add(dbalert)
         for ie in alert.informed_entity:
             dbie = EntitySelector(
                 agency_id=ie.agency_id,
@@ -243,14 +253,19 @@ def process_alerts(fm, opts, session=None):
                 trip_route_id=ie.trip.route_id,
                 trip_start_time=ie.trip.start_time,
                 trip_start_date=ie.trip.start_date)
-            session.add(dbie)
+            if session:
+                session.add(dbie)
             dbalert.InformedEntities.append(dbie)
-    pass
+    if session:
+        pass
+    else:
+        return dbalert, dbie
 
 
 def process_vehicle_positions(fm, opts, session=None):
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
+    dbvp = None
     # Convert this a Python object, and save it to be placed into each
     # vehicle_position
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
@@ -292,7 +307,8 @@ def process_vehicle_positions(fm, opts, session=None):
             congestion_level=congestion_level,
             occupancy_status=gtfs_realtime_pb2.VehiclePosition.OccupancyStatus.Name(vp.occupancy_status),
             timestamp=timestamp)
-        session.add(dbvp)
+        if session:
+            session.add(dbvp)
         if (opts.print_positions is not None and
                 (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
                 and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
@@ -314,7 +330,10 @@ def process_vehicle_positions(fm, opts, session=None):
                              f'{dbvp.stop_id}, (seq {dbvp.current_stop_sequence}), '
                              f'{dbvp.current_status}, {dbvp.occupancy_status}, '
                              f'{dbvp.congestion_level}\n')
-    pass
+    if session:
+        pass
+    else:
+        return dbvp
 
 
 # This does deletes and adds, since it's atomic it never leaves us
