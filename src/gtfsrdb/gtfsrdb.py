@@ -169,7 +169,7 @@ def parse_headers(header_string):
         raise ValueError(f'Invalid header format: {header_string}')
 
 
-def process_trip_updates(fm, opts, session):
+def process_trip_updates(fm, opts, session=None):
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.tripUpdates, headers=headers)).read())
     # Convert this a Python object, and save it to be placed into each
@@ -213,7 +213,7 @@ def process_trip_updates(fm, opts, session):
     pass
 
 
-def process_alerts(fm, opts, session):
+def process_alerts(fm, opts, session=None):
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.alerts, headers=headers)).read())
     # Convert this a Python object, and save it to be placed into each
@@ -248,7 +248,7 @@ def process_alerts(fm, opts, session):
     pass
 
 
-def process_vehicle_positions(fm, opts, session):
+def process_vehicle_positions(fm, opts, session=None):
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
     # Convert this a Python object, and save it to be placed into each
