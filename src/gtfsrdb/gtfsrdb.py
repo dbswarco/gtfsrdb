@@ -143,7 +143,7 @@ pass
 def parse_headers(header_string):
     """Parse header string as either JSON or simple key:value format."""
     if not header_string or not header_string.strip():
-        return None
+        return {}
 
     header_string = header_string.strip()
 
