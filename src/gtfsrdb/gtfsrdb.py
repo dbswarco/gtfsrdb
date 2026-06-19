@@ -29,8 +29,8 @@ import json
 from urllib.request import urlopen, Request
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
-import gtfs_realtime_pb2 as gtfs_realtime_pb2
-from model import *
+from gtfsrdb import gtfs_realtime_pb2
+from gtfsrdb.model import *
 
 
 def parse_options():

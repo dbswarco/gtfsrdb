@@ -40,11 +40,12 @@ services:
       - TZ=America/Detroit
     command:
       # Run command - customize with your actual URLs and database connection
-      - -d postgresql+psycopg2://ott:ott@ubuntudocker-vm/mbta
-      - -w 1
-      - -p https://cdn.mbta.com/realtime/VehiclePositions.pb
-      - -t https://cdn.mbta.com/realtime/TripUpdates.pb
-      - -v
+      - --database=postgresql+psycopg2://ott:ott@ubuntudocker-vm:5432/mbta
+      - --wait=1
+      - --vehicle-positions=https://cdn.mbta.com/realtime/VehiclePositions.pb
+      - --trip-updates=https://cdn.mbta.com/realtime/TripUpdates.pb
+      - --verbose
+      - --create-tables
     volumes:
       # Mount a volume for CSV output if using --print-positions
       - ./data:/app/data
@@ -52,6 +53,11 @@ services:
     #  - postgres
     networks:
       - dcbr
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
 networks:
   dcbr:

@@ -117,24 +117,6 @@ Or from the project root:
 docker-compose -f docker/docker-compose.yml up -d
 ```
 
-### View Logs
-
-```bash
-docker-compose logs -f gtfsrdb
-```
-
-### Stop Services
-
-```bash
-docker-compose down
-```
-
-### Stop and Remove Data
-
-```bash
-docker-compose down -v
-```
-
 ## Environment-Specific Configurations
 
 ### Production

@@ -15,7 +15,8 @@ classifiers = [
 ]
 dependencies = [
     "sqlalchemy",
-    "protobuf~=5.28.3"
+    "protobuf~=5.28.3",
+    "psycopg2-binary"
 ]
 dynamic = ["version"]
 
@@ -32,3 +33,12 @@ gtfsrdb = "gtfsrdb.gtfsrdb:main"
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["gtfsrdb"]
+
+[tool.setuptools.package-dir]
+gtfsrdb = "src/gtfsrdb"
+
+[tool.setuptools.package-data]
+gtfsrdb = ["*.py"]
