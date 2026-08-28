@@ -21,6 +21,8 @@
 # Jorge Adorno
 
 import datetime
+import queue
+import threading
 import time
 import sys
 from optparse import OptionParser
@@ -31,6 +33,9 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
+
+# Sentinel value used to signal the DB worker thread to shut down.
+_WORKER_STOP = object()
 
 
 def parse_options():
@@ -121,7 +126,6 @@ def delete_old(session):
     for theClass in AllClasses:
         for obj in session.query(theClass):
             session.delete(obj)
-    pass
 
 
 def get_translation(string, lang):
@@ -169,15 +173,13 @@ def parse_headers(header_string):
         raise ValueError(f'Invalid header format: {header_string}')
 
 
-def process_trip_updates(fm, opts, session=None):
+def process_trip_updates(fm, opts):
+    """Fetch the trip-updates feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.tripUpdates, headers=headers)).read())
-    # Convert this a Python object, and save it to be placed into each
-    # trip_update
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-    logging.info('Adding %s trip updates', len(fm.entity))
-    dbtu = None
-    dbstu = None
+    logging.info('Collected %s trip updates', len(fm.entity))
+    objects = []
     for entity in fm.entity:
         tu = entity.trip_update
         dbtu = TripUpdate(
@@ -209,26 +211,17 @@ def process_trip_updates(fm, opts, session=None):
                 schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
                     'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name
             )
-            if session:
-                session.add(dbstu)
             dbtu.StopTimeUpdates.append(dbstu)
-        if session:
-            session.add(dbtu)
-    if session:
-        pass
-    else:
-        return dbstu, dbtu
+        objects.append(dbtu)
+    return objects
 
 
-def process_alerts(fm, opts, session=None):
+def process_alerts(fm, opts):
+    """Fetch the alerts feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.alerts, headers=headers)).read())
-    dbalert = None
-    dbie = None
-    # Convert this a Python object, and save it to be placed into each
-    # trip_update
-    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-    logging.info('Adding %s alerts', len(fm.entity))
+    logging.info('Collected %s alerts', len(fm.entity))
+    objects = []
     for entity in fm.entity:
         alert = entity.alert
         dbalert = Alert(
@@ -238,11 +231,8 @@ def process_alerts(fm, opts, session=None):
             effect=alert.DESCRIPTOR.enum_types_by_name['Effect'].values_by_number[alert.effect].name,
             url=get_translation(alert.url, opts.lang),
             header_text=get_translation(alert.header_text, opts.lang),
-            description_text=get_translation(alert.description_text,
-                                             opts.lang)
+            description_text=get_translation(alert.description_text, opts.lang)
         )
-        if session:
-            session.add(dbalert)
         for ie in alert.informed_entity:
             dbie = EntitySelector(
                 agency_id=ie.agency_id,
@@ -253,23 +243,18 @@ def process_alerts(fm, opts, session=None):
                 trip_route_id=ie.trip.route_id,
                 trip_start_time=ie.trip.start_time,
                 trip_start_date=ie.trip.start_date)
-            if session:
-                session.add(dbie)
             dbalert.InformedEntities.append(dbie)
-    if session:
-        pass
-    else:
-        return dbalert, dbie
+        objects.append(dbalert)
+    return objects
 
 
-def process_vehicle_positions(fm, opts, session=None):
+def process_vehicle_positions(fm, opts):
+    """Fetch the vehicle-positions feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
-    dbvp = None
-    # Convert this a Python object, and save it to be placed into each
-    # vehicle_position
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-    logging.info('Adding %s vehicle positions', len(fm.entity))
+    logging.info('Collected %s vehicle positions', len(fm.entity))
+    objects = []
     for entity in fm.entity:
         vp = entity.vehicle
 
@@ -307,8 +292,7 @@ def process_vehicle_positions(fm, opts, session=None):
             congestion_level=congestion_level,
             occupancy_status=gtfs_realtime_pb2.VehiclePosition.OccupancyStatus.Name(vp.occupancy_status),
             timestamp=timestamp)
-        if session:
-            session.add(dbvp)
+
         if (opts.print_positions is not None and
                 (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
                 and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
@@ -322,7 +306,7 @@ def process_vehicle_positions(fm, opts, session=None):
                     f.write(f'Timestamp, Route ID, Vehicle ID, Latitude, Longitude, Stop ID, Current Stop Sequence, '
                             f'Current Status, Occupancy Status, Congestion Level\n')
             except FileExistsError:
-                continue
+                pass
             finally:
                 with open('print_positions.csv', 'a') as f:
                     f.write(f'{dbvp.timestamp}, {dbvp.route_id}, {dbvp.vehicle_id}, '
@@ -330,94 +314,158 @@ def process_vehicle_positions(fm, opts, session=None):
                              f'{dbvp.stop_id}, (seq {dbvp.current_stop_sequence}), '
                              f'{dbvp.current_status}, {dbvp.occupancy_status}, '
                              f'{dbvp.congestion_level}\n')
-    if session:
-        pass
-    else:
-        return dbvp
+
+        objects.append(dbvp)
+    return objects
 
 
-# This does deletes and adds, since it's atomic it never leaves us
-# without data
-def commit(ses):
-    ses.commit()
-    pass
+def collect_feed(opts):
+    """Fetch all configured feeds and return a flat list of ORM objects.
+
+    All network I/O and protobuf parsing happens here, on the calling thread.
+    The returned objects are plain Python/SQLAlchemy instances with no live
+    protobuf references, so they are safe to hand off to another thread.
+    """
+    objects = []
+    fm = gtfs_realtime_pb2.FeedMessage()
+    if opts.tripUpdates:
+        try:
+            objects.extend(process_trip_updates(fm, opts))
+        except Exception:
+            logging.error('Error fetching trip updates: %s', sys.exc_info())
+    if opts.alerts:
+        try:
+            objects.extend(process_alerts(fm, opts))
+        except Exception:
+            logging.error('Error fetching alerts: %s', sys.exc_info())
+    if opts.vehiclePositions:
+        try:
+            objects.extend(process_vehicle_positions(fm, opts))
+        except Exception:
+            logging.error('Error fetching vehicle positions: %s', sys.exc_info())
+    return objects
+
+
+def db_worker(work_queue, Session, opts):
+    """Background thread: drain *work_queue* and write each batch to the DB.
+
+    Each item on the queue is either:
+      - a list of SQLAlchemy ORM objects to add, or
+      - the _WORKER_STOP sentinel, which causes the thread to exit cleanly.
+
+    The worker owns its own Session so there is no cross-thread SQLAlchemy
+    state sharing with the main (fetch) thread.
+    """
+    with Session() as session:
+        while True:
+            try:
+                batch = work_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            if batch is _WORKER_STOP:
+                work_queue.task_done()
+                break
+
+            try:
+                if opts.deleteOld:
+                    delete_old(session)
+                for obj in batch:
+                    session.add(obj)
+                session.commit()
+                remaining = work_queue.qsize()
+                if remaining > 0:
+                    logging.warning(
+                        'DB worker is %d batch(es) behind; consider a longer -w interval '
+                        'or a faster database connection.', remaining)
+            except Exception:
+                logging.error('DB worker error: %s', sys.exc_info())
+                session.rollback()
+            finally:
+                work_queue.task_done()
+
+    logging.info('DB worker stopped.')
 
 
 def main():
     # Parse command line options/args
-    opts,args = parse_options()
+    opts, args = parse_options()
     # Set up a logger
     setup_logger(opts)
+
     # Connect to the database
     engine = create_engine(opts.dsn, echo=opts.verbose)
-    # Create a database inspector
     insp = inspect(engine)
-    # sessionmaker returns a class
     Session = sessionmaker(bind=engine)
 
-    # Use a single database session while running
-    with Session() as session:
-        # Check if it has the tables
-        # Base from model.py
-        for table in Base.metadata.tables.keys():
-            if not insp.has_table(table):
-                if opts.create:
-                    logging.info('Creating table %s', table)
-                    Base.metadata.tables[table].create(engine)
-                else:
-                    logging.error('Missing table %s! Use -c to create it.', table)
-                    exit(1)
-
-        if opts.killAfter > 0:
-            stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
-
-        # Check the feed version once
-        fm = gtfs_realtime_pb2.FeedMessage()
-        if fm.header.gtfs_realtime_version != u'1.0':
-            logging.warning('Warning: feed version mismatch: found %s, expected 1.0',
-                            fm.header.gtfs_realtime_version)
-        keep_running = True
-        while keep_running:
-            loop_start = time.time()
-            if opts.killAfter > 0:
-                if datetime.datetime.now() > stop_time:
-                    sys.exit()
-            try:
-                # if True:
-                logging.info(f"Collecting GTFS-RT feed data at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                if opts.deleteOld:
-                    delete_old(session)
-                # Retrieve the feed message to supply to each of the feed processing functions
-                fm = gtfs_realtime_pb2.FeedMessage()
-                if opts.tripUpdates:
-                    process_trip_updates(fm, opts, session)
-                if opts.alerts:
-                    process_alerts(fm, opts, session)
-                if opts.vehiclePositions:
-                    process_vehicle_positions(fm, opts, session)
-                commit(session)
-            except:
-                # else:
-                logging.error('Exception occurred in iteration')
-                logging.error(sys.exc_info())
-            # put this outside the try...except so it won't be skipped when something
-            # fails
-            # also, makes it easier to end the process with ctrl-c, b/c a
-            # KeyboardInterrupt here will end the program (cleanly)
-            loop_end = time.time()
-            if opts.once:
-                logging.info("Executed the load ONCE ... going to stop now...")
-                keep_running = False
+    # Check / create tables before starting the worker thread
+    for table in Base.metadata.tables.keys():
+        if not insp.has_table(table):
+            if opts.create:
+                logging.info('Creating table %s', table)
+                Base.metadata.tables[table].create(engine)
             else:
-                loop_time = loop_end - loop_start
-                logging.debug(f"Total time to query all feeds took {loop_time:.4f} seconds")
-                if loop_time <= opts.timeout:
-                    time.sleep(opts.timeout)
-                else:
-                    overrun_time = loop_time - opts.timeout
-                    logging.warning(f"Total time to query all fields overran timeout by {overrun_time:.4f} seconds")
-        logging.info("Closing session . . .")
-        session.close()
+                logging.error('Missing table %s! Use -c to create it.', table)
+                exit(1)
+
+    # Check the feed version once (uses a fresh, empty FeedMessage)
+    fm = gtfs_realtime_pb2.FeedMessage()
+    if fm.header.gtfs_realtime_version != u'1.0':
+        logging.warning('Warning: feed version mismatch: found %s, expected 1.0',
+                        fm.header.gtfs_realtime_version)
+
+    # Unbounded queue: the fetch loop enqueues batches; the worker drains them.
+    work_queue = queue.Queue()
+
+    worker = threading.Thread(
+        target=db_worker,
+        args=(work_queue, Session, opts),
+        name='db-worker',
+        daemon=True,
+    )
+    worker.start()
+
+    stop_time = None
+    if opts.killAfter > 0:
+        stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
+
+    keep_running = True
+    while keep_running:
+        loop_start = time.time()
+
+        if stop_time and datetime.datetime.now() > stop_time:
+            logging.info('Kill-after time reached, stopping fetch loop.')
+            break
+
+        logging.info("Collecting GTFS-RT feed data at %s",
+                     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        try:
+            batch = collect_feed(opts)
+            if batch:
+                work_queue.put(batch)
+        except Exception:
+            logging.error('Exception collecting feed: %s', sys.exc_info())
+
+        loop_time = time.time() - loop_start
+        logging.debug('Feed collection took %.4f seconds', loop_time)
+
+        if opts.once:
+            logging.info('Executed the load ONCE ... going to stop now...')
+            keep_running = False
+        else:
+            sleep_time = opts.timeout - loop_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                logging.warning(
+                    'Feed collection overran the -w interval by %.4f seconds',
+                    -sleep_time)
+
+    # Signal the worker and wait for all queued batches to be written
+    logging.info('Waiting for DB worker to finish writing...')
+    work_queue.put(_WORKER_STOP)
+    work_queue.join()
+    logging.info('Done.')
 
 
 if __name__ == "__main__":
