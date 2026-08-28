@@ -429,43 +429,51 @@ def main():
     if opts.killAfter > 0:
         stop_time = datetime.datetime.now() + datetime.timedelta(minutes=opts.killAfter)
 
-    keep_running = True
-    while keep_running:
-        loop_start = time.time()
+    def shutdown(reason):
+        """Stop the fetch loop, flush queued batches, and exit cleanly."""
+        logging.info('%s Waiting for DB worker to finish writing...', reason)
+        work_queue.put(_WORKER_STOP)
+        if worker.is_alive():
+            work_queue.join()
+        logging.info('Done.')
 
-        if stop_time and datetime.datetime.now() > stop_time:
-            logging.info('Kill-after time reached, stopping fetch loop.')
-            break
+    try:
+        keep_running = True
+        while keep_running:
+            loop_start = time.time()
 
-        logging.info("Collecting GTFS-RT feed data at %s",
-                     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        try:
-            batch = collect_feed(opts)
-            if batch:
-                work_queue.put(batch)
-        except Exception:
-            logging.error('Exception collecting feed: %s', sys.exc_info())
+            if stop_time and datetime.datetime.now() > stop_time:
+                logging.info('Kill-after time reached, stopping fetch loop.')
+                break
 
-        loop_time = time.time() - loop_start
-        logging.debug('Feed collection took %.4f seconds', loop_time)
+            logging.info("Collecting GTFS-RT feed data at %s",
+                         datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            try:
+                batch = collect_feed(opts)
+                if batch:
+                    work_queue.put(batch)
+            except Exception:
+                logging.error('Exception collecting feed: %s', sys.exc_info())
 
-        if opts.once:
-            logging.info('Executed the load ONCE ... going to stop now...')
-            keep_running = False
-        else:
-            sleep_time = opts.timeout - loop_time
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+            loop_time = time.time() - loop_start
+            logging.debug('Feed collection took %.4f seconds', loop_time)
+
+            if opts.once:
+                logging.info('Executed the load ONCE ... going to stop now...')
+                keep_running = False
             else:
-                logging.warning(
-                    'Feed collection overran the -w interval by %.4f seconds',
-                    -sleep_time)
+                sleep_time = opts.timeout - loop_time
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                else:
+                    logging.warning(
+                        'Feed collection overran the -w interval by %.4f seconds',
+                        -sleep_time)
 
-    # Signal the worker and wait for all queued batches to be written
-    logging.info('Waiting for DB worker to finish writing...')
-    work_queue.put(_WORKER_STOP)
-    work_queue.join()
-    logging.info('Done.')
+        shutdown('Fetch loop finished.')
+
+    except KeyboardInterrupt:
+        shutdown('Interrupted.')
 
 
 if __name__ == "__main__":

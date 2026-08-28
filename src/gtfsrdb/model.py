@@ -65,7 +65,7 @@ class TripUpdate(Base):
     # moved from the header, and reformatted as datetime
     timestamp = Column(DateTime)
 
-    StopTimeUpdates = relationship('StopTimeUpdate', backref='TripUpdate')
+    StopTimeUpdates = relationship('StopTimeUpdate', backref='TripUpdate', cascade='all, delete-orphan')
 
 
 class StopTimeUpdate(Base):
@@ -112,7 +112,7 @@ class Alert(Base):
     header_text = Column(Text)
     description_text = Column(Text)
 
-    InformedEntities = relationship('EntitySelector', backref='Alert')
+    InformedEntities = relationship('EntitySelector', backref='Alert', cascade='all, delete-orphan')
 
 
 class EntitySelector(Base):
@@ -171,5 +171,6 @@ class VehiclePosition(Base):
     timestamp = Column(DateTime)
 
 
-# So one can loop over all classes to clear them for a new load (-o option)
-AllClasses = (TripUpdate, StopTimeUpdate, Alert, EntitySelector, VehiclePosition)
+# Order matters for delete_old(): children (FK holders) must be deleted before
+# their parents to avoid foreign-key constraint violations.
+AllClasses = (StopTimeUpdate, TripUpdate, EntitySelector, Alert, VehiclePosition)
