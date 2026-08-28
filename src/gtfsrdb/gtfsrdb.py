@@ -33,6 +33,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2 as gtfs_realtime_pb2
 from model import *
+from adaptive import FeedUpdateTimers
 
 # Sentinel value used to signal the DB worker thread to shut down.
 _WORKER_STOP = object()
@@ -82,7 +83,12 @@ def parse_options():
                  help='Print position updates for a given route number')
 
     p.add_option('-H', '--header', default=None,
-             help="Add HTTP header options such as API key. Format: JSON string like '{\"Key\":\"Value\"}' or simple 'Key:Value'", metavar="HEADER")
+             help="Add HTTP header options such as API key. "
+                  "Format: JSON string like '{\"Key\":\"Value\"}' or simple 'Key:Value'", metavar="HEADER")
+
+    p.add_option('--sleep', default=0, type='int', metavar='SECS',
+                 dest='sleep_before_start',
+                 help='Seconds to wait before starting data collection (useful for API limits)')
 
     return p.parse_args()
 
@@ -173,7 +179,7 @@ def parse_headers(header_string):
         raise ValueError(f'Invalid header format: {header_string}')
 
 
-def process_trip_updates(fm, opts):
+def process_trip_updates(fm, opts, timers):
     """Fetch the trip-updates feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.tripUpdates, headers=headers)).read())
@@ -213,10 +219,12 @@ def process_trip_updates(fm, opts):
             )
             dbtu.StopTimeUpdates.append(dbstu)
         objects.append(dbtu)
+    if objects:
+        timers.process_timestamps(objects[0])
     return objects
 
 
-def process_alerts(fm, opts):
+def process_alerts(fm, opts, timers):
     """Fetch the alerts feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.alerts, headers=headers)).read())
@@ -245,10 +253,12 @@ def process_alerts(fm, opts):
                 trip_start_date=ie.trip.start_date)
             dbalert.InformedEntities.append(dbie)
         objects.append(dbalert)
-    return objects
+        if objects:
+            timers.process_timestamps(objects[0])
+        return objects
 
 
-def process_vehicle_positions(fm, opts):
+def process_vehicle_positions(fm, opts, timers):
     """Fetch the vehicle-positions feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
@@ -316,10 +326,12 @@ def process_vehicle_positions(fm, opts):
                              f'{dbvp.congestion_level}\n')
 
         objects.append(dbvp)
+    if objects:
+        timers.process_timestamps(objects[0])
     return objects
 
 
-def collect_feed(opts):
+def collect_feed(opts, timers):
     """Fetch all configured feeds and return a flat list of ORM objects.
 
     All network I/O and protobuf parsing happens here, on the calling thread.
@@ -330,19 +342,21 @@ def collect_feed(opts):
     fm = gtfs_realtime_pb2.FeedMessage()
     if opts.tripUpdates:
         try:
-            objects.extend(process_trip_updates(fm, opts))
+            objects.extend(process_trip_updates(fm, opts, timers))
         except Exception:
             logging.error('Error fetching trip updates: %s', sys.exc_info())
     if opts.alerts:
         try:
-            objects.extend(process_alerts(fm, opts))
+            objects.extend(process_alerts(fm, opts, timers))
         except Exception:
             logging.error('Error fetching alerts: %s', sys.exc_info())
     if opts.vehiclePositions:
         try:
-            objects.extend(process_vehicle_positions(fm, opts))
+            objects.extend(process_vehicle_positions(fm, opts, timers))
         except Exception:
             logging.error('Error fetching vehicle positions: %s', sys.exc_info())
+    logging.info('Average feed update interval: %s' % timers.average_update_interval)
+    logging.debug('All update intervals: %s' % timers.update_intervals)
     return objects
 
 
@@ -408,11 +422,16 @@ def main():
                 logging.error('Missing table %s! Use -c to create it.', table)
                 exit(1)
 
+    if opts.sleep_before_start:
+        logging.info('Waiting %s seconds before collecting GTFS-RT data...' % opts.sleep_before_start)
+        time.sleep(opts.sleep_before_start)
+
     # Check the feed version once (uses a fresh, empty FeedMessage)
     fm = gtfs_realtime_pb2.FeedMessage()
     if fm.header.gtfs_realtime_version != u'1.0':
         logging.warning('Warning: feed version mismatch: found %s, expected 1.0',
                         fm.header.gtfs_realtime_version)
+    timers = FeedUpdateTimers()
 
     # Unbounded queue: the fetch loop enqueues batches; the worker drains them.
     work_queue = queue.Queue()
@@ -432,9 +451,12 @@ def main():
     def shutdown(reason):
         """Stop the fetch loop, flush queued batches, and exit cleanly."""
         logging.info('%s Waiting for DB worker to finish writing...', reason)
+        shutdown_start = datetime.datetime.now()
         work_queue.put(_WORKER_STOP)
         if worker.is_alive():
             work_queue.join()
+        logging.info('Database write extended beyond shutdown signal by %s seconds.' %
+                     (datetime.datetime.now()-shutdown_start).total_seconds())
         logging.info('Done.')
 
     try:
@@ -449,7 +471,7 @@ def main():
             logging.info("Collecting GTFS-RT feed data at %s",
                          datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             try:
-                batch = collect_feed(opts)
+                batch = collect_feed(opts, timers)
                 if batch:
                     work_queue.put(batch)
             except Exception:
