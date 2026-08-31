@@ -183,44 +183,46 @@ def process_trip_updates(fm, opts, timers):
     """Fetch the trip-updates feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.tripUpdates, headers=headers)).read())
-    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-    logging.info('Collected %s trip updates', len(fm.entity))
     objects = []
-    for entity in fm.entity:
-        tu = entity.trip_update
-        dbtu = TripUpdate(
-            trip_id=tu.trip.trip_id,
-            route_id=tu.trip.route_id,
-            trip_start_time=tu.trip.start_time,
-            trip_start_date=tu.trip.start_date,
-            # get the schedule relationship
-            # This is somewhat undocumented, but by referencing the
-            # DESCRIPTOR.enum_types_by_name, you get a dict of enum types
-            # as described at
-            # http://code.google.com/apis/protocolbuffers/docs/reference/python/google.protobuf.descriptor.EnumDescriptor-class.html
-            schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
-                'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name,
-            vehicle_id=tu.vehicle.id,
-            vehicle_label=tu.vehicle.label,
-            vehicle_license_plate=tu.vehicle.license_plate,
-            timestamp=timestamp)
-        for stu in tu.stop_time_update:
-            dbstu = StopTimeUpdate(
-                stop_sequence=stu.stop_sequence,
-                stop_id=stu.stop_id,
-                arrival_delay=stu.arrival.delay,
-                arrival_time=stu.arrival.time,
-                arrival_uncertainty=stu.arrival.uncertainty,
-                departure_delay=stu.departure.delay,
-                departure_time=stu.departure.time,
-                departure_uncertainty=stu.departure.uncertainty,
+    logging.debug('Collected trip updates, checking to see if the timestamp is new')
+    timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
+    if timestamp > timers.last_TripUpdate:
+        logging.info('Collected %s trip updates with timestamp %s', len(fm.entity), timestamp)
+        for entity in fm.entity:
+            tu = entity.trip_update
+            dbtu = TripUpdate(
+                trip_id=tu.trip.trip_id,
+                route_id=tu.trip.route_id,
+                trip_start_time=tu.trip.start_time,
+                trip_start_date=tu.trip.start_date,
+                # get the schedule relationship
+                # This is somewhat undocumented, but by referencing the
+                # DESCRIPTOR.enum_types_by_name, you get a dict of enum types
+                # as described at
+                # http://code.google.com/apis/protocolbuffers/docs/reference/python/google.protobuf.descriptor.EnumDescriptor-class.html
                 schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
-                    'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name
-            )
-            dbtu.StopTimeUpdates.append(dbstu)
-        objects.append(dbtu)
-    if objects:
-        timers.process_timestamps(objects[0])
+                    'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name,
+                vehicle_id=tu.vehicle.id,
+                vehicle_label=tu.vehicle.label,
+                vehicle_license_plate=tu.vehicle.license_plate,
+                timestamp=timestamp)
+            for stu in tu.stop_time_update:
+                dbstu = StopTimeUpdate(
+                    stop_sequence=stu.stop_sequence,
+                    stop_id=stu.stop_id,
+                    arrival_delay=stu.arrival.delay,
+                    arrival_time=stu.arrival.time,
+                    arrival_uncertainty=stu.arrival.uncertainty,
+                    departure_delay=stu.departure.delay,
+                    departure_time=stu.departure.time,
+                    departure_uncertainty=stu.departure.uncertainty,
+                    schedule_relationship=tu.trip.DESCRIPTOR.enum_types_by_name[
+                        'ScheduleRelationship'].values_by_number[tu.trip.schedule_relationship].name
+                )
+                dbtu.StopTimeUpdates.append(dbstu)
+            objects.append(dbtu)
+        if objects:
+            timers.process_timestamps(objects[0])
     return objects
 
 
@@ -263,71 +265,72 @@ def process_vehicle_positions(fm, opts, timers):
     headers = parse_headers(opts.header)
     fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
-    logging.info('Collected %s vehicle positions', len(fm.entity))
     objects = []
-    for entity in fm.entity:
-        vp = entity.vehicle
+    logging.debug('Collected vehicle positions, checking to see if the timestamp is new')
+    if timestamp > timers.last_VehiclePosition:
+        logging.info('Collected %s vehicle positions with timestamp %s', len(fm.entity), timestamp)
+        for entity in fm.entity:
+            vp = entity.vehicle
+            # Handle optional fields with HasField check or default values
+            trip_direction_id = vp.trip.direction_id if vp.trip.HasField('direction_id') else None
+            trip_schedule_relationship = gtfs_realtime_pb2.TripDescriptor.ScheduleRelationship.Name(
+                vp.trip.schedule_relationship) if vp.trip.HasField('schedule_relationship') else None
 
-        # Handle optional fields with HasField check or default values
-        trip_direction_id = vp.trip.direction_id if vp.trip.HasField('direction_id') else None
-        trip_schedule_relationship = gtfs_realtime_pb2.TripDescriptor.ScheduleRelationship.Name(
-            vp.trip.schedule_relationship) if vp.trip.HasField('schedule_relationship') else None
+            current_stop_sequence = vp.current_stop_sequence if vp.HasField('current_stop_sequence') else None
+            stop_id = vp.stop_id if vp.HasField('stop_id') else None
 
-        current_stop_sequence = vp.current_stop_sequence if vp.HasField('current_stop_sequence') else None
-        stop_id = vp.stop_id if vp.HasField('stop_id') else None
+            position_odometer = vp.position.odometer if vp.position.HasField('odometer') else None
 
-        position_odometer = vp.position.odometer if vp.position.HasField('odometer') else None
+            congestion_level = gtfs_realtime_pb2.VehiclePosition.CongestionLevel.Name(
+                vp.congestion_level) if vp.HasField('congestion_level') else None
 
-        congestion_level = gtfs_realtime_pb2.VehiclePosition.CongestionLevel.Name(
-            vp.congestion_level) if vp.HasField('congestion_level') else None
+            dbvp = VehiclePosition(
+                trip_id=vp.trip.trip_id,
+                route_id=vp.trip.route_id,
+                trip_start_time=vp.trip.start_time,
+                trip_start_date=vp.trip.start_date,
+                trip_direction_id=trip_direction_id,
+                trip_schedule_relationship=trip_schedule_relationship,
+                vehicle_id=vp.vehicle.id,
+                vehicle_label=vp.vehicle.label,
+                vehicle_license_plate=vp.vehicle.license_plate,
+                position_latitude=vp.position.latitude,
+                position_longitude=vp.position.longitude,
+                position_bearing=vp.position.bearing,
+                position_speed=vp.position.speed,
+                position_odometer=position_odometer,
+                current_stop_sequence=current_stop_sequence,
+                stop_id=stop_id,
+                current_status=gtfs_realtime_pb2.VehiclePosition.VehicleStopStatus.Name(vp.current_status),
+                congestion_level=congestion_level,
+                occupancy_status=gtfs_realtime_pb2.VehiclePosition.OccupancyStatus.Name(vp.occupancy_status),
+                timestamp=timestamp)
 
-        dbvp = VehiclePosition(
-            trip_id=vp.trip.trip_id,
-            route_id=vp.trip.route_id,
-            trip_start_time=vp.trip.start_time,
-            trip_start_date=vp.trip.start_date,
-            trip_direction_id=trip_direction_id,
-            trip_schedule_relationship=trip_schedule_relationship,
-            vehicle_id=vp.vehicle.id,
-            vehicle_label=vp.vehicle.label,
-            vehicle_license_plate=vp.vehicle.license_plate,
-            position_latitude=vp.position.latitude,
-            position_longitude=vp.position.longitude,
-            position_bearing=vp.position.bearing,
-            position_speed=vp.position.speed,
-            position_odometer=position_odometer,
-            current_stop_sequence=current_stop_sequence,
-            stop_id=stop_id,
-            current_status=gtfs_realtime_pb2.VehiclePosition.VehicleStopStatus.Name(vp.current_status),
-            congestion_level=congestion_level,
-            occupancy_status=gtfs_realtime_pb2.VehiclePosition.OccupancyStatus.Name(vp.occupancy_status),
-            timestamp=timestamp)
+            if (opts.print_positions is not None and
+                    (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
+                    and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
+                logging.info(f'{dbvp.timestamp}: Route {dbvp.route_id}, Veh {dbvp.vehicle_id}: '
+                             f'Position {dbvp.position_latitude}, {dbvp.position_longitude}, '
+                             f'Stop {dbvp.stop_id} (seq {dbvp.current_stop_sequence}), '
+                             f'Status {dbvp.current_status}, Occupancy {dbvp.occupancy_status}, '
+                             f'Congestion {dbvp.congestion_level}')
+                try:
+                    with open('print_positions.csv', 'x') as f:
+                        f.write(f'Timestamp, Route ID, Vehicle ID, Latitude, Longitude, Stop ID, Current Stop Sequence, '
+                                f'Current Status, Occupancy Status, Congestion Level\n')
+                except FileExistsError:
+                    pass
+                finally:
+                    with open('print_positions.csv', 'a') as f:
+                        f.write(f'{dbvp.timestamp}, {dbvp.route_id}, {dbvp.vehicle_id}, '
+                                 f'{dbvp.position_latitude}, {dbvp.position_longitude}, '
+                                 f'{dbvp.stop_id}, (seq {dbvp.current_stop_sequence}), '
+                                 f'{dbvp.current_status}, {dbvp.occupancy_status}, '
+                                 f'{dbvp.congestion_level}\n')
 
-        if (opts.print_positions is not None and
-                (dbvp.route_id in [item.strip() for item in opts.print_positions.split(",")]
-                and dbvp.vehicle_id in [item.strip() for item in opts.print_positions.split(",")])):
-            logging.info(f'{dbvp.timestamp}: Route {dbvp.route_id}, Veh {dbvp.vehicle_id}: '
-                         f'Position {dbvp.position_latitude}, {dbvp.position_longitude}, '
-                         f'Stop {dbvp.stop_id} (seq {dbvp.current_stop_sequence}), '
-                         f'Status {dbvp.current_status}, Occupancy {dbvp.occupancy_status}, '
-                         f'Congestion {dbvp.congestion_level}')
-            try:
-                with open('print_positions.csv', 'x') as f:
-                    f.write(f'Timestamp, Route ID, Vehicle ID, Latitude, Longitude, Stop ID, Current Stop Sequence, '
-                            f'Current Status, Occupancy Status, Congestion Level\n')
-            except FileExistsError:
-                pass
-            finally:
-                with open('print_positions.csv', 'a') as f:
-                    f.write(f'{dbvp.timestamp}, {dbvp.route_id}, {dbvp.vehicle_id}, '
-                             f'{dbvp.position_latitude}, {dbvp.position_longitude}, '
-                             f'{dbvp.stop_id}, (seq {dbvp.current_stop_sequence}), '
-                             f'{dbvp.current_status}, {dbvp.occupancy_status}, '
-                             f'{dbvp.congestion_level}\n')
-
-        objects.append(dbvp)
-    if objects:
-        timers.process_timestamps(objects[0])
+            objects.append(dbvp)
+        if objects:
+            timers.process_timestamps(objects[0])
     return objects
 
 
