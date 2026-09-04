@@ -179,9 +179,10 @@ def parse_headers(header_string):
         raise ValueError(f'Invalid header format: {header_string}')
 
 
-def process_trip_updates(fm, opts, timers):
+def process_trip_updates(opts, timers):
     """Fetch the trip-updates feed and return a list of ORM objects ready to persist."""
-    headers = parse_headers(opts.header)
+    headers = parse_headers(opts.header) or {}
+    fm = gtfs_realtime_pb2.FeedMessage()
     fm.ParseFromString(urlopen(Request(opts.tripUpdates, headers=headers)).read())
     objects = []
     logging.debug('Collected trip updates, checking to see if the timestamp is new')
@@ -226,9 +227,10 @@ def process_trip_updates(fm, opts, timers):
     return objects
 
 
-def process_alerts(fm, opts, timers):
+def process_alerts(opts, timers):
     """Fetch the alerts feed and return a list of ORM objects ready to persist."""
     headers = parse_headers(opts.header)
+    fm = gtfs_realtime_pb2.FeedMessage()
     fm.ParseFromString(urlopen(Request(opts.alerts, headers=headers)).read())
     logging.info('Collected %s alerts', len(fm.entity))
     objects = []
@@ -260,9 +262,10 @@ def process_alerts(fm, opts, timers):
         return objects
 
 
-def process_vehicle_positions(fm, opts, timers):
+def process_vehicle_positions(opts, timers):
     """Fetch the vehicle-positions feed and return a list of ORM objects ready to persist."""
-    headers = parse_headers(opts.header)
+    headers = parse_headers(opts.header) or {}
+    fm = gtfs_realtime_pb2.FeedMessage()
     fm.ParseFromString(urlopen(Request(opts.vehiclePositions, headers=headers)).read())
     timestamp = datetime.datetime.utcfromtimestamp(fm.header.timestamp)
     objects = []
@@ -342,20 +345,19 @@ def collect_feed(opts, timers):
     protobuf references, so they are safe to hand off to another thread.
     """
     objects = []
-    fm = gtfs_realtime_pb2.FeedMessage()
     if opts.tripUpdates:
         try:
-            objects.extend(process_trip_updates(fm, opts, timers))
+            objects.extend(process_trip_updates(opts, timers))
         except Exception:
             logging.error('Error fetching trip updates: %s', sys.exc_info())
     if opts.alerts:
         try:
-            objects.extend(process_alerts(fm, opts, timers))
+            objects.extend(process_alerts(opts, timers))
         except Exception:
             logging.error('Error fetching alerts: %s', sys.exc_info())
     if opts.vehiclePositions:
         try:
-            objects.extend(process_vehicle_positions(fm, opts, timers))
+            objects.extend(process_vehicle_positions(opts, timers))
         except Exception:
             logging.error('Error fetching vehicle positions: %s', sys.exc_info())
     logging.info('Average feed update interval: %s' % timers.average_update_interval)
