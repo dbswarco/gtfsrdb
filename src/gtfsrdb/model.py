@@ -20,7 +20,7 @@
 # Matt Conway: main code
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, ForeignKey, Integer, Text, DateTime, Float
+from sqlalchemy import Column, ForeignKey, Integer, Text, DateTime, Float, BigInteger
 from sqlalchemy.orm import relationship, backref
 
 Base = declarative_base()
@@ -70,7 +70,7 @@ class TripUpdate(Base):
 
 class StopTimeUpdate(Base):
     __tablename__ = 'stop_time_updates'
-    oid = Column(Integer, primary_key=True)
+    oid = Column(BigInteger, primary_key=True)
 
     # TODO: Fill one from the other
     stop_sequence = Column(Integer)

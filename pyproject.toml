@@ -15,7 +15,8 @@ classifiers = [
 ]
 dependencies = [
     "sqlalchemy",
-    "protobuf~=5.28.3"
+    "protobuf~=5.28.3",
+    "psycopg2-binary~=2.9.13"
 ]
 dynamic = ["version"]
 
