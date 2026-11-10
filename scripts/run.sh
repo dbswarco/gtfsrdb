@@ -35,6 +35,6 @@ fi
 # Uncomment to debug commands sent to gtfsrdb.py.
 # set -x
 cd "$PROJECT_DIR" || exit 3
-source .venv/bin/activate
+#source .venv/bin/activate
 cd "$PROJECT_DIR"/src/gtfsrdb || exit 3
-python gtfsrdb.py -d postgresql+psycopg2://"$DB_USER":"$DB_PASS"@"$DB_HOST"/"$DB_NAME" -c $gtfsrdb_args $optional_args
+uv run python gtfsrdb.py -d postgresql+psycopg2://"$DB_USER":"$DB_PASS"@"$DB_HOST"/"$DB_NAME" -c $gtfsrdb_args $optional_args

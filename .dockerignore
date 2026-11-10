@@ -1,0 +1,12 @@
+.git
+.idea
+.venv
+build
+*.egg-info
+__pycache__
+**/__pycache__
+*.py[cod]
+*.swp
+scripts/.env
+*.db
+*.csv
